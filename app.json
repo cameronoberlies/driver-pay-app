@@ -24,6 +24,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2fa6ed9e-334f-4d4e-83f4-753b40bf843b"
+      }
+    },
+    "owner": "cameron.oberlies"
   }
 }
