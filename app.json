@@ -15,8 +15,12 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.driverportal.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Used to track your drive and calculate miles.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Used to track your drive in the background.",
+        "NSLocationAlwaysUsageDescription": "Used to track your drive in the background."
+      },
+      "backgroundModes": ["location"]
     },
     "android": {
       "adaptiveIcon": {
