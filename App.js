@@ -10,43 +10,67 @@ import { supabase } from './lib/supabase';
 import LoginScreen from './screens/LoginScreen';
 import DriverDashboard from './screens/DriverDashboard';
 import DriveScreen from './screens/DriveScreen';
+import AdminOverview from './screens/AdminOverview';
+import LogEntryScreen from './screens/LogEntryScreen';
+import AllEntriesScreen from './screens/AllEntriesScreen';
 
-function TabBar({ active, onSelect }) {
+const DRIVER_TABS = ['dashboard', 'drive'];
+const ADMIN_TABS = ['overview', 'drive', 'log', 'entries'];
+
+const TAB_LABELS = {
+  dashboard: 'DASHBOARD',
+  drive: 'DRIVE',
+  overview: 'OVERVIEW',
+  log: 'LOG',
+  entries: 'ENTRIES',
+};
+
+function TabBar({ active, onSelect, role }) {
+  const tabs = role === 'admin' ? ADMIN_TABS : DRIVER_TABS;
   return (
     <View style={styles.tabBar}>
-      <TouchableOpacity
-        style={[styles.tab, active === 'dashboard' && styles.tabActive]}
-        onPress={() => onSelect('dashboard')}
-      >
-        <Text style={[styles.tabText, active === 'dashboard' && styles.tabTextActive]}>
-          DASHBOARD
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.tab, active === 'drive' && styles.tabActive]}
-        onPress={() => onSelect('drive')}
-      >
-        <Text style={[styles.tabText, active === 'drive' && styles.tabTextActive]}>
-          DRIVE
-        </Text>
-      </TouchableOpacity>
+      {tabs.map(t => (
+        <TouchableOpacity
+          key={t}
+          style={[styles.tab, active === t && styles.tabActive]}
+          onPress={() => onSelect(t)}
+        >
+          <Text style={[styles.tabText, active === t && styles.tabTextActive]}>
+            {TAB_LABELS[t]}
+          </Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
 
 export default function App() {
   const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
+      if (session) {
+        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+        setProfile(data);
+        setActiveTab(data?.role === 'admin' ? 'overview' : 'dashboard');
+      }
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
+      if (session) {
+        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+        setProfile(data);
+        setActiveTab(data?.role === 'admin' ? 'overview' : 'dashboard');
+      } else {
+        setProfile(null);
+        setActiveTab(null);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -62,15 +86,25 @@ export default function App() {
 
   if (!session) return <LoginScreen />;
 
+  function renderScreen() {
+    if (profile?.role === 'admin') {
+      if (activeTab === 'overview') return <AdminOverview session={session} profile={profile} />;
+      if (activeTab === 'drive') return <DriveScreen session={session} />;
+      if (activeTab === 'log') return <LogEntryScreen session={session} profile={profile} />;
+      if (activeTab === 'entries') return <AllEntriesScreen session={session} profile={profile} />;
+    } else {
+      if (activeTab === 'dashboard') return <DriverDashboard session={session} />;
+      if (activeTab === 'drive') return <DriveScreen session={session} />;
+    }
+    return null;
+  }
+
   return (
     <View style={styles.appContainer}>
       <View style={styles.screen}>
-        {activeTab === 'dashboard'
-          ? <DriverDashboard session={session} />
-          : <DriveScreen session={session} />
-        }
+        {renderScreen()}
       </View>
-      <TabBar active={activeTab} onSelect={setActiveTab} />
+      <TabBar active={activeTab} onSelect={setActiveTab} role={profile?.role} />
     </View>
   );
 }
