@@ -97,6 +97,12 @@ export default function DriveScreen({ session }) {
     }, { onConflict: 'driver_id' });
   };
 
+  // Start live location push timer
+    liveLocationTimerRef.current = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL);
+
+    // Push immediately on start
+    pushLiveLocation();
+
   // Clear live location from Supabase when drive ends
   const clearLiveLocation = async () => {
     if (!session?.user?.id) return;
@@ -116,33 +122,36 @@ export default function DriveScreen({ session }) {
     const sub = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
-        timeInterval: 10000,   // every 10 seconds
-        distanceInterval: 50,  // or every 50 meters
+        timeInterval: 10000,
+        distanceInterval: 50,
       },
       (loc) => {
         const { latitude, longitude } = loc.coords;
         lastKnownLocationRef.current = { latitude, longitude };
-        const waypoints = waypointsRef.current;
 
+        // 👇 ADD THIS LINE
+        if (waypointsRef.current.length === 0) pushLiveLocation();
+
+        const waypoints = waypointsRef.current;
         if (waypoints.length > 0) {
           const last = waypoints[waypoints.length - 1];
           const added = getDistanceMiles(last.lat, last.lon, latitude, longitude);
           setMiles(prev => prev + added);
         }
-
         waypointsRef.current.push({ lat: latitude, lon: longitude });
       }
     );
 
     locationSubRef.current = sub;
 
-    // Start elapsed timer
     timerRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
 
-    // Start live location push timer
     liveLocationTimerRef.current = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL);
+
+    // 👇 ADD THIS LINE
+    pushLiveLocation();
 
     setState(STATES.DRIVING);
   };
