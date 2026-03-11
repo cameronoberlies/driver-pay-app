@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 24, paddingBottom: 48 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, paddingTop: 50 },
   greeting: { fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
   period: { fontSize: 10, color: '#555', letterSpacing: 2, marginTop: 4 },
   signOutBtn: { paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2a2a2a', borderRadius: 4 },
