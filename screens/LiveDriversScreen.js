@@ -36,7 +36,9 @@ export default function LiveDriversScreen() {
   }, []);
 
   const now = new Date();
-  const active = locations.filter(l => (now - new Date(l.updated_at)) < 2 * 60 * 1000);
+  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  const visibleLocations = locations.filter(l => (now - new Date(l.updated_at)) < TWO_HOURS);
+  const active = visibleLocations.filter(l => (now - new Date(l.updated_at)) < 2 * 60 * 1000);
 
   function getDriverName(id) {
     return profiles.find(p => p.id === id)?.name ?? 'Unknown';
@@ -66,6 +68,8 @@ export default function LiveDriversScreen() {
   function updateMarkers(locations) {
     const seen = new Set();
     const now = Date.now();
+    const TWO_HOURS = 2 * 60 * 60 * 1000;
+    locations = locations.filter(loc => (now - new Date(loc.updated_at).getTime()) < TWO_HOURS);
     const bounds = [];
 
     locations.forEach(loc => {
@@ -125,9 +129,9 @@ export default function LiveDriversScreen() {
       </View>
 
       {/* Driver pills */}
-      {locations.length > 0 && (
+      {visibleLocations.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.pillRow}>
-          {locations.map(loc => {
+          {visibleLocations.map(loc => {
             const age = now - new Date(loc.updated_at);
             const isActive = age < 2 * 60 * 1000;
             const mins = Math.floor(age / 60000);
@@ -158,7 +162,7 @@ export default function LiveDriversScreen() {
         />
       </View>
 
-      {locations.length === 0 && (
+      {visibleLocations.length === 0 && (
         <View style={s.emptyOverlay}>
           <Text style={s.emptyText}>No drivers currently tracked</Text>
         </View>
