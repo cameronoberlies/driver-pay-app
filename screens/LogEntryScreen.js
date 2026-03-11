@@ -5,8 +5,111 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
+function formatDate(dateStr) {
+  const [y, m, d] = dateStr.split('-');
+  return `${m}/${d}/${y}`;
+}
+
+function PendingRow({ entry, driverName, onComplete }) {
+  const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    pay: '',
+    hours: '',
+    actual_cost: String(entry.actual_cost ?? ''),
+    estimated_cost: String(entry.estimated_cost ?? ''),
+    crm_id: '',
+    recon_missed: entry.recon_missed ?? false,
+  });
+
+  function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
+
+  async function handleComplete() {
+    if (!form.pay || !form.crm_id) {
+      Alert.alert('Missing Fields', 'Pay and Carpage ID are required.');
+      return;
+    }
+    setSaving(true);
+    const { data, error } = await supabase.from('entries').update({
+      pay: Number(form.pay),
+      hours: form.hours ? Number(form.hours) : null,
+      actual_cost: form.actual_cost ? Number(form.actual_cost) : 0,
+      estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : 0,
+      crm_id: form.crm_id.trim(),
+      recon_missed: form.recon_missed,
+    }).eq('id', entry.id).select().single();
+    setSaving(false);
+    if (error) { Alert.alert('Failed', error.message); return; }
+    onComplete(data);
+  }
+
+  return (
+    <View style={p.card}>
+      <TouchableOpacity style={p.cardHeader} onPress={() => setExpanded(x => !x)}>
+        <View style={p.cardLeft}>
+          <Text style={p.cardName}>{driverName}</Text>
+          <Text style={p.cardMeta}>
+            {formatDate(entry.date)}
+            {entry.city ? `  ·  ${entry.city}` : ''}
+            {entry.miles > 0 ? `  ·  ${entry.miles} mi` : ''}
+            {entry.drive_time > 0 ? `  ·  ${entry.drive_time}h GPS` : ''}
+          </Text>
+        </View>
+        <Text style={p.chevron}>{expanded ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={p.form}>
+          <View style={p.row}>
+            <View style={p.half}>
+              <Text style={p.label}>PAY ($) *</Text>
+              <TextInput style={p.input} value={form.pay} onChangeText={v => set('pay', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#333" />
+            </View>
+            <View style={p.half}>
+              <Text style={p.label}>HOURS WORKED</Text>
+              <TextInput style={p.input} value={form.hours} onChangeText={v => set('hours', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor="#333" />
+            </View>
+          </View>
+          <View style={p.row}>
+            <View style={p.half}>
+              <Text style={p.label}>ACTUAL COST ($)</Text>
+              <TextInput style={p.input} value={form.actual_cost} onChangeText={v => set('actual_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#333" />
+            </View>
+            <View style={p.half}>
+              <Text style={p.label}>ESTIMATED COST ($)</Text>
+              <TextInput style={p.input} value={form.estimated_cost} onChangeText={v => set('estimated_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#333" />
+            </View>
+          </View>
+          <Text style={p.label}>CARPAGE ID *</Text>
+          <TextInput style={p.input} value={form.crm_id} onChangeText={v => set('crm_id', v)} placeholder="CP-XXXX" placeholderTextColor="#333" autoCapitalize="characters" />
+
+          <View style={p.switchRow}>
+            <Text style={[p.switchLabel, form.recon_missed && { color: '#e85a4a' }]}>RECON MISSED</Text>
+            <Switch
+              value={form.recon_missed}
+              onValueChange={v => set('recon_missed', v)}
+              trackColor={{ false: '#1a1a1a', true: 'rgba(232,90,74,0.4)' }}
+              thumbColor={form.recon_missed ? '#e85a4a' : '#333'}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[p.completeBtn, (saving || !form.pay || !form.crm_id) && p.completeBtnDim]}
+            onPress={handleComplete}
+            disabled={saving || !form.pay || !form.crm_id}
+          >
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={p.completeBtnText}>COMPLETE ENTRY →</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function LogEntryScreen() {
   const [drivers, setDrivers] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -28,13 +131,24 @@ export default function LogEntryScreen() {
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
 
   useEffect(() => {
-    supabase.from('profiles').select('*').eq('role', 'driver').then(({ data }) => {
-      const list = data ?? [];
+    async function load() {
+      const [{ data: profs }, { data: entries }] = await Promise.all([
+        supabase.from('profiles').select('*').eq('role', 'driver'),
+        supabase.from('entries').select('*').or('crm_id.is.null,crm_id.eq.').gt('miles', 0),
+      ]);
+      const list = profs ?? [];
       setDrivers(list);
+      setProfiles(list);
+      setPending(entries ?? []);
       if (list.length > 0) set('driver_id', list[0].id);
       setLoading(false);
-    });
+    }
+    load();
   }, []);
+
+  function handlePendingComplete(updated) {
+    setPending(prev => prev.filter(e => e.id !== updated.id));
+  }
 
   async function handleSave() {
     if (!form.driver_id || !form.pay || !form.city || !form.crm_id) {
@@ -65,6 +179,30 @@ export default function LogEntryScreen() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+
+      {pending.length > 0 && (
+        <View style={s.pendingSection}>
+          <View style={s.pendingHeader}>
+            <Text style={s.pendingTitle}>PENDING SUBMISSIONS</Text>
+            <View style={s.pendingBadge}>
+              <Text style={s.pendingBadgeText}>{pending.length}</Text>
+            </View>
+          </View>
+          <Text style={s.pendingSubtitle}>Driver-submitted trips — tap to complete</Text>
+          {pending.map(e => (
+            <PendingRow
+              key={e.id}
+              entry={e}
+              driverName={profiles.find(p => p.id === e.driver_id)?.name ?? 'Unknown'}
+              onComplete={handlePendingComplete}
+            />
+          ))}
+          <View style={s.divider} />
+        </View>
+      )}
+
+      <Text style={s.sectionTitle}>NEW MANUAL ENTRY</Text>
+      <Text style={s.sectionSub}>For trips not tracked via the app</Text>
 
       <Text style={s.label}>DRIVER</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
@@ -140,6 +278,15 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 40 },
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
+  pendingSection: { marginBottom: 8 },
+  pendingHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  pendingTitle: { fontSize: 10, color: '#f5a623', letterSpacing: 2, fontWeight: '700' },
+  pendingBadge: { backgroundColor: 'rgba(245,166,35,0.15)', borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 7, paddingVertical: 1 },
+  pendingBadgeText: { fontSize: 11, color: '#f5a623', fontWeight: '800' },
+  pendingSubtitle: { fontSize: 11, color: '#555', marginBottom: 12 },
+  divider: { height: 1, backgroundColor: '#1a1a1a', marginTop: 20, marginBottom: 20 },
+  sectionTitle: { fontSize: 10, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 2 },
+  sectionSub: { fontSize: 11, color: '#333', marginBottom: 8 },
   label: { fontSize: 10, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 6, marginTop: 14 },
   input: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', color: '#fff', paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   row: { flexDirection: 'row', gap: 10 },
@@ -155,4 +302,23 @@ const s = StyleSheet.create({
   saveBtnText: { color: '#0a0a0a', fontWeight: '900', fontSize: 14, letterSpacing: 2 },
   success: { backgroundColor: 'rgba(74,232,133,0.1)', borderWidth: 1, borderColor: '#4ae885', padding: 12, marginTop: 12, alignItems: 'center' },
   successText: { color: '#4ae885', fontWeight: '700' },
+});
+
+const p = StyleSheet.create({
+  card: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, borderLeftColor: '#3b8cf7', marginBottom: 10 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 14 },
+  cardLeft: { flex: 1 },
+  cardName: { fontSize: 14, fontWeight: '800', color: '#fff', marginBottom: 3 },
+  cardMeta: { fontSize: 11, color: '#555' },
+  chevron: { fontSize: 12, color: '#f5a623', marginLeft: 10 },
+  form: { padding: 14, paddingTop: 0, borderTopWidth: 1, borderTopColor: '#1e1e1e' },
+  row: { flexDirection: 'row', gap: 10 },
+  half: { flex: 1 },
+  label: { fontSize: 10, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 6, marginTop: 14 },
+  input: { backgroundColor: '#0a0a0a', borderWidth: 1, borderColor: '#1e1e1e', color: '#fff', paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 },
+  switchLabel: { fontSize: 11, color: '#555', letterSpacing: 2, fontWeight: '700' },
+  completeBtn: { backgroundColor: '#3b8cf7', padding: 14, alignItems: 'center', marginTop: 16 },
+  completeBtnDim: { opacity: 0.4 },
+  completeBtnText: { color: '#fff', fontWeight: '900', fontSize: 13, letterSpacing: 2 },
 });
