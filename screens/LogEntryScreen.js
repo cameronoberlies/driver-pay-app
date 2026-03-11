@@ -276,7 +276,7 @@ export default function LogEntryScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 20, paddingTop: 20, paddingBottom: 40 },
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
   pendingSection: { marginBottom: 8 },
   pendingHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },

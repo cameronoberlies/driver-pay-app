@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
 
   adminBar: {
-    paddingTop: 52, paddingBottom: 14, paddingHorizontal: 20,
+    paddingTop: 60, paddingBottom: 14, paddingHorizontal: 20,
     backgroundColor: '#0a0a0a', borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },

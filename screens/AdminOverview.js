@@ -107,7 +107,7 @@ export default function AdminOverview() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 20, paddingTop: 20, paddingBottom: 40 },
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
   period: { fontSize: 11, color: '#555', letterSpacing: 1, marginBottom: 20 },
   statsRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },

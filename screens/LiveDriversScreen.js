@@ -176,7 +176,7 @@ const s = StyleSheet.create({
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
   statusBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    paddingHorizontal: 20, paddingTop: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
   },
   statusLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dot: { width: 8, height: 8, borderRadius: 4 },

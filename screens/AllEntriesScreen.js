@@ -113,7 +113,7 @@ export default function AllEntriesScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
-  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10, gap: 10 },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10, gap: 10 },
   search: { flex: 1, backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', color: '#fff', paddingHorizontal: 12, paddingVertical: 9, fontSize: 13 },
   count: { fontSize: 11, color: '#555' },
   filterRow: { paddingLeft: 20, marginBottom: 10, flexGrow: 0 },
