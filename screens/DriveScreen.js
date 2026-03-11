@@ -41,6 +41,9 @@ const STATES = {
   SUMMARY: 'summary',
 };
 
+// How often to push live location to Supabase (ms)
+const LIVE_LOCATION_INTERVAL = 30000; // 30 seconds
+
 export default function DriveScreen({ session }) {
   const [state, setState] = useState(STATES.IDLE);
   const [miles, setMiles] = useState(0);
@@ -52,12 +55,15 @@ export default function DriveScreen({ session }) {
   const startTimeRef = useRef(null);
   const locationSubRef = useRef(null);
   const timerRef = useRef(null);
+  const liveLocationTimerRef = useRef(null);
+  const lastKnownLocationRef = useRef(null);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (locationSubRef.current) locationSubRef.current.remove();
       if (timerRef.current) clearInterval(timerRef.current);
+      if (liveLocationTimerRef.current) clearInterval(liveLocationTimerRef.current);
     };
   }, []);
 
@@ -71,12 +77,30 @@ export default function DriveScreen({ session }) {
     if (bg !== 'granted') {
       Alert.alert(
         'Background Location Required',
-        'Please allow "Always" location access in Settings so DriverPay can track miles when your screen is locked.',
+        'Please allow "Always" location access in Settings so the app can track miles when your screen is locked.',
         [{ text: 'OK' }]
       );
       return false;
     }
     return true;
+  };
+
+  // Push current location to Supabase for live tracking
+  const pushLiveLocation = async () => {
+    if (!lastKnownLocationRef.current || !session?.user?.id) return;
+    const { latitude, longitude } = lastKnownLocationRef.current;
+    await supabase.from('driver_locations').upsert({
+      driver_id: session.user.id,
+      latitude,
+      longitude,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'driver_id' });
+  };
+
+  // Clear live location from Supabase when drive ends
+  const clearLiveLocation = async () => {
+    if (!session?.user?.id) return;
+    await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
   };
 
   const startDrive = async () => {
@@ -97,6 +121,7 @@ export default function DriveScreen({ session }) {
       },
       (loc) => {
         const { latitude, longitude } = loc.coords;
+        lastKnownLocationRef.current = { latitude, longitude };
         const waypoints = waypointsRef.current;
 
         if (waypoints.length > 0) {
@@ -116,6 +141,9 @@ export default function DriveScreen({ session }) {
       setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
 
+    // Start live location push timer
+    liveLocationTimerRef.current = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL);
+
     setState(STATES.DRIVING);
   };
 
@@ -128,6 +156,11 @@ export default function DriveScreen({ session }) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (liveLocationTimerRef.current) {
+      clearInterval(liveLocationTimerRef.current);
+      liveLocationTimerRef.current = null;
+    }
+    clearLiveLocation();
     setState(STATES.SUMMARY);
   };
 
@@ -139,7 +172,8 @@ export default function DriveScreen({ session }) {
 
     setSaving(true);
 
-    const hoursDecimal = parseFloat((elapsed / 3600).toFixed(1));
+    // drive_time = GPS-tracked drive duration in decimal hours
+    const driveTimeDecimal = parseFloat((elapsed / 3600).toFixed(2));
     const roundedMiles = parseFloat(miles.toFixed(1));
     const today = new Date().toISOString().split('T')[0];
 
@@ -147,7 +181,8 @@ export default function DriveScreen({ session }) {
       driver_id: session.user.id,
       date: today,
       pay: 0,
-      hours: hoursDecimal,
+      hours: null,        // Admin fills in total hours worked
+      drive_time: driveTimeDecimal, // GPS-tracked drive time
       miles: roundedMiles,
       city: city.trim(),
       crm_id: '',
@@ -174,6 +209,7 @@ export default function DriveScreen({ session }) {
     setElapsed(0);
     setCity('');
     waypointsRef.current = [];
+    lastKnownLocationRef.current = null;
   };
 
   // IDLE — ready to start
