@@ -82,7 +82,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 32 },
+  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingTop: 60 },
   logoBlock: { marginBottom: 48 },
   logoText: { fontSize: 38, fontWeight: '900', color: '#ffffff', letterSpacing: 2 },
   logoAccent: { color: '#f5a623' },
