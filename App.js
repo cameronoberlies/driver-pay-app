@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal,
+  ActivityIndicator, Modal, AppState,
 } from 'react-native';
 import { supabase } from './lib/supabase';
 import LoginScreen from './screens/LoginScreen';
@@ -89,6 +89,8 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const appState = useRef(AppState.currentState);
 
   async function loadProfile(s) {
     const { data } = await supabase.from('profiles').select('*').eq('id', s.user.id).single();
@@ -109,12 +111,30 @@ export default function App() {
       else { setProfile(null); setActiveTab(null); }
     });
 
-    return () => subscription.unsubscribe();
+    // Refresh data when app comes back to foreground
+    const appStateSubscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        setRefreshKey(k => k + 1);
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      appStateSubscription.remove();
+    };
   }, []);
 
-  async function handleSignOut() { 
+  async function handleSignOut() {
     await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
-    await supabase.auth.signOut(); }
+    await supabase.auth.signOut();
+  }
+
+  // Also refresh when tab changes
+  function handleTabSelect(tab) {
+    setActiveTab(tab);
+    setRefreshKey(k => k + 1);
+  }
 
   if (loading) return <View style={styles.loader}><ActivityIndicator color="#f5a623" size="large" /></View>;
   if (!session) return <LoginScreen />;
@@ -123,14 +143,14 @@ export default function App() {
 
   function renderScreen() {
     if (isAdmin) {
-      if (activeTab === 'overview') return <AdminOverview session={session} />;
-      if (activeTab === 'log') return <LogEntryScreen session={session} />;
-      if (activeTab === 'entries') return <AllEntriesScreen session={session} />;
-      if (activeTab === 'mileage') return <MileageCostsScreen session={session} />;
-      if (activeTab === 'availability') return <AvailabilityScreen session={session} />;
-      if (activeTab === 'live') return <LiveDriversScreen session={session} />;
+      if (activeTab === 'overview') return <AdminOverview key={refreshKey} session={session} />;
+      if (activeTab === 'log') return <LogEntryScreen key={refreshKey} session={session} />;
+      if (activeTab === 'entries') return <AllEntriesScreen key={refreshKey} session={session} />;
+      if (activeTab === 'mileage') return <MileageCostsScreen key={refreshKey} session={session} />;
+      if (activeTab === 'availability') return <AvailabilityScreen key={refreshKey} session={session} />;
+      if (activeTab === 'live') return <LiveDriversScreen key={refreshKey} session={session} />;
     } else {
-      if (activeTab === 'dashboard') return <DriverDashboard session={session} />;
+      if (activeTab === 'dashboard') return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === 'drive') return <DriveScreen session={session} />;
     }
     return null;
@@ -139,7 +159,7 @@ export default function App() {
   if (isAdmin) {
     return (
       <View style={styles.app}>
-        <AdminNav active={activeTab} onSelect={setActiveTab} onSignOut={handleSignOut} />
+        <AdminNav active={activeTab} onSelect={handleTabSelect} onSignOut={handleSignOut} />
         <View style={styles.screen}>{renderScreen()}</View>
       </View>
     );
@@ -148,7 +168,7 @@ export default function App() {
   return (
     <View style={styles.app}>
       <View style={styles.screen}>{renderScreen()}</View>
-      <DriverTabBar active={activeTab} onSelect={setActiveTab} />
+      <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
     </View>
   );
 }
