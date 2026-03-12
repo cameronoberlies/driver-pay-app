@@ -112,7 +112,9 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function handleSignOut() { await supabase.auth.signOut(); }
+  async function handleSignOut() { 
+    await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
+    await supabase.auth.signOut(); }
 
   if (loading) return <View style={styles.loader}><ActivityIndicator color="#f5a623" size="large" /></View>;
   if (!session) return <LoginScreen />;
