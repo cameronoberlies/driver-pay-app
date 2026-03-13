@@ -1,12 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Modal,
-  AppState,
+  View, Text, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Modal, AppState,
 } from "react-native";
 import { supabase } from "./lib/supabase";
 import LoginScreen from "./screens/LoginScreen";
@@ -40,10 +35,7 @@ function AdminNav({ active, onSelect, onSignOut }) {
           <TouchableOpacity onPress={onSignOut} style={styles.signOutBtn}>
             <Text style={styles.signOutText}>SIGN OUT</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setOpen(true)}
-            style={styles.hamburger}
-          >
+          <TouchableOpacity onPress={() => setOpen(true)} style={styles.hamburger}>
             <View style={styles.line} />
             <View style={styles.line} />
             <View style={styles.line} />
@@ -51,37 +43,17 @@ function AdminNav({ active, onSelect, onSignOut }) {
         </View>
       </View>
 
-      <Modal
-        visible={open}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setOpen(false)}
-      >
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={() => setOpen(false)}
-        >
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOpen(false)}>
           <View style={styles.drawer}>
             <Text style={styles.drawerHeading}>MENU</Text>
             {ADMIN_TABS.map((t) => (
               <TouchableOpacity
                 key={t.id}
-                style={[
-                  styles.drawerRow,
-                  active === t.id && styles.drawerRowActive,
-                ]}
-                onPress={() => {
-                  onSelect(t.id);
-                  setOpen(false);
-                }}
+                style={[styles.drawerRow, active === t.id && styles.drawerRowActive]}
+                onPress={() => { onSelect(t.id); setOpen(false); }}
               >
-                <Text
-                  style={[
-                    styles.drawerLabel,
-                    active === t.id && styles.drawerLabelActive,
-                  ]}
-                >
+                <Text style={[styles.drawerLabel, active === t.id && styles.drawerLabelActive]}>
                   {t.label}
                 </Text>
                 {active === t.id && <View style={styles.dot} />}
@@ -126,8 +98,10 @@ export default function App() {
       .select("*")
       .eq("id", s.user.id)
       .single();
-    setProfile(data);
-    setActiveTab(data?.role === "admin" ? "overview" : "dashboard");
+    if (data) {
+      setProfile(data);
+      setActiveTab(data?.role === "admin" ? "overview" : "dashboard");
+    }
   }
 
   useEffect(() => {
@@ -137,32 +111,18 @@ export default function App() {
       setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session) await loadProfile(session);
-      else {
-        setProfile(null);
-        setActiveTab(null);
-      }
+      else { setProfile(null); setActiveTab(null); }
     });
 
-    // Refresh data when app comes back to foreground
-    const appStateSubscription = AppState.addEventListener(
-      "change",
-      async (nextAppState) => {
-        if (
-          appState.current.match(/inactive|background/) &&
-          nextAppState === "active"
-        ) {
-          // Refresh session before re-fetching data
-          await supabase.auth.refreshSession();
-          setRefreshKey((k) => k + 1);
-        }
-        appState.current = nextAppState;
-      },
-    );
+    const appStateSubscription = AppState.addEventListener("change", (nextAppState) => {
+      if (appState.current.match(/inactive|background/) && nextAppState === "active") {
+        setRefreshKey((k) => k + 1);
+      }
+      appState.current = nextAppState;
+    });
 
     return () => {
       subscription.unsubscribe();
@@ -171,14 +131,10 @@ export default function App() {
   }, []);
 
   async function handleSignOut() {
-    await supabase
-      .from("driver_locations")
-      .delete()
-      .eq("driver_id", session.user.id);
+    await supabase.from("driver_locations").delete().eq("driver_id", session.user.id);
     await supabase.auth.signOut();
   }
 
-  // Also refresh when tab changes
   function handleTabSelect(tab) {
     setActiveTab(tab);
     setRefreshKey((k) => k + 1);
@@ -190,27 +146,21 @@ export default function App() {
         <ActivityIndicator color="#f5a623" size="large" />
       </View>
     );
+
   if (!session) return <LoginScreen />;
 
   const isAdmin = profile?.role === "admin";
 
   function renderScreen() {
     if (isAdmin) {
-      if (activeTab === "overview")
-        return <AdminOverview key={refreshKey} session={session} />;
-      if (activeTab === "log")
-        return <LogEntryScreen key={refreshKey} session={session} />;
-      if (activeTab === "entries")
-        return <AllEntriesScreen key={refreshKey} session={session} />;
-      if (activeTab === "mileage")
-        return <MileageCostsScreen key={refreshKey} session={session} />;
-      if (activeTab === "availability")
-        return <AvailabilityScreen key={refreshKey} session={session} />;
-      if (activeTab === "live")
-        return <LiveDriversScreen key={refreshKey} session={session} />;
+      if (activeTab === "overview") return <AdminOverview key={refreshKey} session={session} />;
+      if (activeTab === "log") return <LogEntryScreen key={refreshKey} session={session} />;
+      if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} session={session} />;
+      if (activeTab === "mileage") return <MileageCostsScreen key={refreshKey} session={session} />;
+      if (activeTab === "availability") return <AvailabilityScreen key={refreshKey} session={session} />;
+      if (activeTab === "live") return <LiveDriversScreen key={refreshKey} session={session} />;
     } else {
-      if (activeTab === "dashboard")
-        return <DriverDashboard key={refreshKey} session={session} />;
+      if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "drive") return <DriveScreen session={session} />;
     }
     return null;
@@ -219,11 +169,7 @@ export default function App() {
   if (isAdmin) {
     return (
       <View style={styles.app}>
-        <AdminNav
-          active={activeTab}
-          onSelect={handleTabSelect}
-          onSignOut={handleSignOut}
-        />
+        <AdminNav active={activeTab} onSelect={handleTabSelect} onSignOut={handleSignOut} />
         <View style={styles.screen}>{renderScreen()}</View>
       </View>
     );
@@ -238,87 +184,38 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loader: {
-    flex: 1,
-    backgroundColor: "#0a0a0a",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  loader: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center" },
   app: { flex: 1, backgroundColor: "#0a0a0a" },
   screen: { flex: 1 },
 
   adminBar: {
-    paddingTop: 60,
-    paddingBottom: 14,
-    paddingHorizontal: 20,
-    backgroundColor: "#0a0a0a",
-    borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    paddingTop: 60, paddingBottom: 14, paddingHorizontal: 20,
+    backgroundColor: "#0a0a0a", borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
-  adminBarTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#fff",
-    letterSpacing: 2,
-  },
+  adminBarTitle: { fontSize: 16, fontWeight: "900", color: "#fff", letterSpacing: 2 },
   adminBarRight: { flexDirection: "row", alignItems: "center", gap: 14 },
-  signOutBtn: {
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  signOutText: {
-    fontSize: 9,
-    color: "#555",
-    letterSpacing: 1.5,
-    fontWeight: "700",
-  },
+  signOutBtn: { borderWidth: 1, borderColor: "#2a2a2a", paddingHorizontal: 10, paddingVertical: 5 },
+  signOutText: { fontSize: 9, color: "#555", letterSpacing: 1.5, fontWeight: "700" },
   hamburger: { gap: 5, padding: 4 },
   line: { width: 22, height: 2, backgroundColor: "#f5a623" },
 
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    justifyContent: "flex-end",
-  },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
   drawer: {
-    backgroundColor: "#111",
-    borderTopWidth: 1,
-    borderTopColor: "#222",
-    paddingTop: 28,
-    paddingBottom: 52,
-    paddingHorizontal: 28,
+    backgroundColor: "#111", borderTopWidth: 1, borderTopColor: "#222",
+    paddingTop: 28, paddingBottom: 52, paddingHorizontal: 28,
   },
-  drawerHeading: {
-    fontSize: 10,
-    color: "#444",
-    letterSpacing: 3,
-    fontWeight: "700",
-    marginBottom: 16,
-  },
+  drawerHeading: { fontSize: 10, color: "#444", letterSpacing: 3, fontWeight: "700", marginBottom: 16 },
   drawerRow: {
-    paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
   },
   drawerRowActive: {},
   drawerLabel: { fontSize: 20, fontWeight: "700", color: "#555" },
   drawerLabelActive: { color: "#f5a623" },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#f5a623" },
 
-  tabBar: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderTopColor: "#1a1a1a",
-    backgroundColor: "#0a0a0a",
-  },
+  tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#1a1a1a", backgroundColor: "#0a0a0a" },
   tab: { flex: 1, paddingVertical: 16, alignItems: "center" },
   tabActive: { borderTopWidth: 2, borderTopColor: "#f5a623" },
   tabText: { fontSize: 11, color: "#444", letterSpacing: 2, fontWeight: "700" },
