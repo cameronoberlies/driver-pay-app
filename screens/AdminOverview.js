@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -22,30 +22,58 @@ function fmt(n) {
   return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
 }
 
+const TIMEOUT_MS = 8000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
 export default function AdminOverview() {
   const [drivers, setDrivers] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(false);
 
   const { start: wkStart, end: wkEnd } = getWeekBounds();
   const thisMonth = new Date().toISOString().slice(0, 7);
 
   async function load() {
-    const [{ data: p }, { data: e }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('role', 'driver'),
-      supabase.from('entries').select('*'),
-    ]);
-    setDrivers(p ?? []);
-    setEntries(e ?? []);
-    setLoading(false);
-    setRefreshing(false);
+    setError(false);
+    try {
+      const [{ data: p }, { data: e }] = await withTimeout(
+        Promise.all([
+          supabase.from('profiles').select('*').eq('role', 'driver'),
+          supabase.from('entries').select('*'),
+        ]),
+        TIMEOUT_MS
+      );
+      setDrivers(p ?? []);
+      setEntries(e ?? []);
+    } catch (err) {
+      setError(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
   function onRefresh() { setRefreshing(true); load(); }
 
   if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+
+  if (error) return (
+    <View style={s.center}>
+      <Text style={s.errorText}>Failed to load data</Text>
+      <TouchableOpacity style={s.retryBtn} onPress={() => { setLoading(true); load(); }}>
+        <Text style={s.retryText}>RETRY</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const weekEntries = entries.filter(e => {
     const d = new Date(e.date + 'T12:00:00');
@@ -61,7 +89,6 @@ export default function AdminOverview() {
         {wkEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
       </Text>
 
-      {/* Summary row */}
       <View style={s.statsRow}>
         {[
           { label: 'DRIVERS', value: drivers.length },
@@ -126,4 +153,7 @@ const s = StyleSheet.create({
   driverMeta: { fontSize: 11, color: '#555', marginTop: 3 },
   driverPay: { fontSize: 22, fontWeight: '900', color: '#f5a623' },
   empty: { color: '#444', textAlign: 'center', marginTop: 32 },
+  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
+  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
+  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
 });

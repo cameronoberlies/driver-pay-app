@@ -10,6 +10,14 @@ function formatDate(dateStr) {
   return `${m}/${d}/${y}`;
 }
 
+const TIMEOUT_MS = 8000;
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
 function PendingRow({ entry, driverName, onComplete }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -111,6 +119,7 @@ export default function LogEntryScreen() {
   const [pending, setPending] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -130,21 +139,29 @@ export default function LogEntryScreen() {
 
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
 
-  useEffect(() => {
-    async function load() {
-      const [{ data: profs }, { data: entries }] = await Promise.all([
-        supabase.from('profiles').select('*').eq('role', 'driver'),
-        supabase.from('entries').select('*').or('crm_id.is.null,crm_id.eq.').gt('miles', 0),
-      ]);
+  async function load() {
+    setError(false);
+    try {
+      const [{ data: profs }, { data: entries }] = await withTimeout(
+        Promise.all([
+          supabase.from('profiles').select('*').eq('role', 'driver'),
+          supabase.from('entries').select('*').or('crm_id.is.null,crm_id.eq.').gt('miles', 0),
+        ]),
+        TIMEOUT_MS
+      );
       const list = profs ?? [];
       setDrivers(list);
       setProfiles(list);
       setPending(entries ?? []);
       if (list.length > 0) set('driver_id', list[0].id);
+    } catch (err) {
+      setError(true);
+    } finally {
       setLoading(false);
     }
-    load();
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
 
   function handlePendingComplete(updated) {
     setPending(prev => prev.filter(e => e.id !== updated.id));
@@ -176,6 +193,15 @@ export default function LogEntryScreen() {
   }
 
   if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+
+  if (error) return (
+    <View style={s.center}>
+      <Text style={s.errorText}>Failed to load data</Text>
+      <TouchableOpacity style={s.retryBtn} onPress={() => { setLoading(true); load(); }}>
+        <Text style={s.retryText}>RETRY</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
@@ -302,6 +328,9 @@ const s = StyleSheet.create({
   saveBtnText: { color: '#0a0a0a', fontWeight: '900', fontSize: 14, letterSpacing: 2 },
   success: { backgroundColor: 'rgba(74,232,133,0.1)', borderWidth: 1, borderColor: '#4ae885', padding: 12, marginTop: 12, alignItems: 'center' },
   successText: { color: '#4ae885', fontWeight: '700' },
+  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
+  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
+  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
 });
 
 const p = StyleSheet.create({

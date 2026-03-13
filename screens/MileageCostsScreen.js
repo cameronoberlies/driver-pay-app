@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -20,21 +20,39 @@ function getWeekBounds() {
 
 function fmtMoney(n) { return '$' + Number(n||0).toLocaleString('en-US', { minimumFractionDigits: 2 }); }
 
+const TIMEOUT_MS = 8000;
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
 export default function MileageCostsScreen() {
   const [entries, setEntries] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(false);
 
   async function load() {
-    const [{ data: e }, { data: p }] = await Promise.all([
-      supabase.from('entries').select('*').order('date', { ascending: false }),
-      supabase.from('profiles').select('*'),
-    ]);
-    setEntries(e ?? []);
-    setProfiles(p ?? []);
-    setLoading(false);
-    setRefreshing(false);
+    setError(false);
+    try {
+      const [{ data: e }, { data: p }] = await withTimeout(
+        Promise.all([
+          supabase.from('entries').select('*').order('date', { ascending: false }),
+          supabase.from('profiles').select('*'),
+        ]),
+        TIMEOUT_MS
+      );
+      setEntries(e ?? []);
+      setProfiles(p ?? []);
+    } catch (err) {
+      setError(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -55,6 +73,15 @@ export default function MileageCostsScreen() {
 
   if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
 
+  if (error) return (
+    <View style={s.center}>
+      <Text style={s.errorText}>Failed to load data</Text>
+      <TouchableOpacity style={s.retryBtn} onPress={() => { setLoading(true); load(); }}>
+        <Text style={s.retryText}>RETRY</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}>
@@ -64,7 +91,6 @@ export default function MileageCostsScreen() {
         {wkEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
       </Text>
 
-      {/* Summary cards */}
       <View style={s.row}>
         <View style={s.statCard}>
           <Text style={s.statLabel}>TOTAL MILES</Text>
@@ -143,4 +169,7 @@ const s = StyleSheet.create({
   cardStat: {},
   cardStatLabel: { fontSize: 9, color: '#555', letterSpacing: 1.5, fontWeight: '700', marginBottom: 2 },
   cardStatValue: { fontSize: 14, fontWeight: '800', color: '#ccc' },
+  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
+  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
+  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
 });
