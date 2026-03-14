@@ -18,7 +18,9 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Used to track your drive and calculate miles.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Used to track your drive in the background.",
-        "NSLocationAlwaysUsageDescription": "Used to track your drive in the background."
+        "NSLocationAlwaysUsageDescription": "Used to track your drive in the background.",
+        "NSLocalNetworkUsageDescription": "Required to connect to development server",
+        "NSBonjourServices": ["_expo._tcp"]
       },
       "backgroundModes": ["location"]
     },
