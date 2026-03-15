@@ -42,3 +42,9 @@ yarn-error.*
 
 #env
 .env
+
+# Supabase local environment
+.env.local
+volumes/
+.branches/
+.temp/

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx jest:*)",
+      "Bash(node -e \"console.log\\(require.resolve\\(''babel-preset-expo''\\)\\)\")",
+      "Bash(node -e \"const jest = require\\(''jest''\\); console.log\\(jest.getVersion\\(\\)\\)\")"
+    ]
+  }
+}

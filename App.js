@@ -11,7 +11,7 @@ import {
 import { supabase } from "./lib/supabase";
 import LoginScreen from "./screens/LoginScreen";
 import DriverDashboard from "./screens/DriverDashboard";
-import DriveScreen from "./screens/DriveScreen";
+import MyTripsScreen from "./screens/MyTripsScreen";
 import AdminOverview from "./screens/AdminOverview";
 import LogEntryScreen from "./screens/LogEntryScreen";
 import AllEntriesScreen from "./screens/AllEntriesScreen";
@@ -97,7 +97,7 @@ function AdminNav({ active, onSelect, onSignOut }) {
 function DriverTabBar({ active, onSelect }) {
   return (
     <View style={styles.tabBar}>
-      {["dashboard", "drive"].map((t) => (
+      {["dashboard", "trips"].map((t) => (
         <TouchableOpacity
           key={t}
           style={[styles.tab, active === t && styles.tabActive]}
@@ -161,12 +161,17 @@ export default function App() {
           nextAppState === "active"
         ) {
           console.log("App foregrounded - refreshing session");
-          const { data } = await supabase.auth.getSession();
+          const { data, error } = await supabase.auth.refreshSession();
+          console.log(
+            "Session refresh result:",
+            data?.session?.expires_at,
+            error,
+          );
           if (data?.session) setSession(data.session);
           setRefreshKey((k) => k + 1);
         }
         appState.current = nextAppState;
-      }
+      },
     );
 
     return () => {
@@ -216,7 +221,8 @@ export default function App() {
     } else {
       if (activeTab === "dashboard")
         return <DriverDashboard key={refreshKey} session={session} />;
-      if (activeTab === "drive") return <DriveScreen session={session} />;
+      if (activeTab === "trips") 
+        return <MyTripsScreen key={refreshKey} session={session} />;
     }
     return null;
   }

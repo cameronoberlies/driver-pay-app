@@ -4,34 +4,9 @@ import {
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-
-function getWeekBounds() {
-  const today = new Date();
-  const day = today.getDay();
-  const diff = (day >= 3) ? day - 3 : day + 4;
-  const wed = new Date(today);
-  wed.setDate(today.getDate() - diff);
-  wed.setHours(0, 0, 0, 0);
-  const tue = new Date(wed);
-  tue.setDate(wed.getDate() + 6);
-  tue.setHours(23, 59, 59, 999);
-  return { start: wed, end: tue };
-}
-
-function getMonthBounds() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  return { start, end };
-}
+import { getWeekBounds, getMonthBounds, withTimeout } from '../lib/utils';
 
 const TIMEOUT_MS = 8000;
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ]);
-}
 
 export default function DriverDashboard({ session }) {
   const [profile, setProfile] = useState(null);
