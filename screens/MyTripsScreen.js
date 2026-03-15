@@ -124,27 +124,36 @@ export default function MyTripsScreen({ session }) {
   }, []);
 
   async function load() {
-    setError(false);
-    try {
-      const userId = session.user.id;
-      const { data, error: err } = await withTimeout(
-        supabase
-          .from('trips')
-          .select('*')
-          .or(`driver_id.eq.${userId},second_driver_id.eq.${userId}`)
-          .in('status', ['pending', 'in_progress', 'completed'])
-          .order('scheduled_pickup', { ascending: true }),
-        TIMEOUT_MS
-      );
-      if (err) throw err;
-      setTrips(data ?? []);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  setError(false);
+  try {
+    const userId = session.user.id;
+    const { data, error: err } = await withTimeout(
+      supabase
+        .from('trips')
+        .select('*')
+        .or(`driver_id.eq.${userId},second_driver_id.eq.${userId}`)
+        .in('status', ['pending', 'in_progress', 'completed'])
+        .order('scheduled_pickup', { ascending: true }),
+      TIMEOUT_MS
+    );
+    if (err) throw err;
+    setTrips(data ?? []);
+
+    // Rehydrate activeTrip if there's an in_progress trip
+    const inProgress = (data ?? []).find(
+      t => t.status === 'in_progress' && t.designated_driver_id === userId
+    );
+    if (inProgress && !activeTrip) {
+      setActiveTrip({ id: inProgress.id, miles: inProgress.miles ?? 0, elapsed: 0 });
     }
+
+  } catch {
+    setError(true);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
   }
+}
 
   useEffect(() => { load(); }, []);
   function onRefresh() { setRefreshing(true); load(); }
@@ -342,7 +351,7 @@ export default function MyTripsScreen({ session }) {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingTop: 20, paddingBottom: 48 },
+  content: { padding: 20, paddingTop: 60, paddingBottom: 48 },
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
   sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginBottom: 10, marginTop: 4 },
 

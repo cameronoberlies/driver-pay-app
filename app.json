@@ -20,13 +20,24 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Used to track your drive in the background.",
         "NSLocationAlwaysUsageDescription": "Used to track your drive in the background.",
         "NSLocalNetworkUsageDescription": "Required to connect to development server",
-        "NSBonjourServices": ["_expo._tcp"]
+        "NSBonjourServices": [
+          "_expo._tcp",
+          "_expo._tcp"
+        ]
       },
-      "backgroundModes": ["location"]
+      "backgroundModes": [
+        "location",
+        "location"
+      ]
     },
     "android": {
       "package": "com.driverportal.app",
       "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
@@ -48,6 +59,12 @@
         "projectId": "2fa6ed9e-334f-4d4e-83f4-753b40bf843b"
       }
     },
-    "owner": "cameron.oberlies"
+    "owner": "cameron.oberlies",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/2fa6ed9e-334f-4d4e-83f4-753b40bf843b"
+    }
   }
 }
