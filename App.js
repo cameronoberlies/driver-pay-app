@@ -1,13 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Modal,
-  AppState,
+  View, Text, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Modal, AppState, Platform,
 } from "react-native";
+import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
 import { supabase } from "./lib/supabase";
 import LoginScreen from "./screens/LoginScreen";
 import DriverDashboard from "./screens/DriverDashboard";
@@ -18,6 +15,14 @@ import AllEntriesScreen from "./screens/AllEntriesScreen";
 import MileageCostsScreen from "./screens/MileageCostsScreen";
 import AvailabilityScreen from "./screens/AvailabilityScreen";
 import LiveDriversScreen from "./screens/LiveDriversScreen";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 const ADMIN_TABS = [
   { id: "overview", label: "Overview" },
@@ -40,10 +45,7 @@ function AdminNav({ active, onSelect, onSignOut }) {
           <TouchableOpacity onPress={onSignOut} style={styles.signOutBtn}>
             <Text style={styles.signOutText}>SIGN OUT</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setOpen(true)}
-            style={styles.hamburger}
-          >
+          <TouchableOpacity onPress={() => setOpen(true)} style={styles.hamburger}>
             <View style={styles.line} />
             <View style={styles.line} />
             <View style={styles.line} />
@@ -51,37 +53,17 @@ function AdminNav({ active, onSelect, onSignOut }) {
         </View>
       </View>
 
-      <Modal
-        visible={open}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setOpen(false)}
-      >
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={() => setOpen(false)}
-        >
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOpen(false)}>
           <View style={styles.drawer}>
             <Text style={styles.drawerHeading}>MENU</Text>
             {ADMIN_TABS.map((t) => (
               <TouchableOpacity
                 key={t.id}
-                style={[
-                  styles.drawerRow,
-                  active === t.id && styles.drawerRowActive,
-                ]}
-                onPress={() => {
-                  onSelect(t.id);
-                  setOpen(false);
-                }}
+                style={[styles.drawerRow, active === t.id && styles.drawerRowActive]}
+                onPress={() => { onSelect(t.id); setOpen(false); }}
               >
-                <Text
-                  style={[
-                    styles.drawerLabel,
-                    active === t.id && styles.drawerLabelActive,
-                  ]}
-                >
+                <Text style={[styles.drawerLabel, active === t.id && styles.drawerLabelActive]}>
                   {t.label}
                 </Text>
                 {active === t.id && <View style={styles.dot} />}
@@ -112,6 +94,41 @@ function DriverTabBar({ active, onSelect }) {
   );
 }
 
+async function registerForPushNotifications(userId) {
+  if (!Device.isDevice) return; // skip in simulator
+
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  let finalStatus = existing;
+
+  if (existing !== "granted") {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== "granted") return;
+
+  const tokenData = await Notifications.getExpoPushTokenAsync({
+    projectId: "2fa6ed9e-334f-4d4e-83f4-753b40bf843b",
+  });
+
+  const token = tokenData.data;
+
+  // Save token to Supabase profiles table
+  await supabase
+    .from("profiles")
+    .update({ push_token: token })
+    .eq("id", userId);
+
+  // Required for Android
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+    });
+  }
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -120,6 +137,8 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const appState = useRef(AppState.currentState);
+  const notificationListener = useRef();
+  const responseListener = useRef();
 
   async function loadProfile(s) {
     const { data, error } = await supabase
@@ -134,6 +153,10 @@ export default function App() {
     if (data) {
       setProfile(data);
       setActiveTab(data?.role === "admin" ? "overview" : "dashboard");
+      // Register push token for drivers
+      if (data.role === "driver") {
+        registerForPushNotifications(s.user.id);
+      }
     }
   }
 
@@ -149,9 +172,7 @@ export default function App() {
       setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "INITIAL_SESSION") return;
       setSession(session);
       if (session) {
@@ -162,43 +183,47 @@ export default function App() {
       }
     });
 
-    const appStateSubscription = AppState.addEventListener(
-      "change",
-      async (nextAppState) => {
-        if (
-          appState.current.match(/inactive|background/) &&
-          nextAppState === "active"
-        ) {
-          const {
-            data: { session: currentSession },
-          } = await supabase.auth.getSession();
-          if (currentSession) {
-            setIsRefreshing(true);
-            try {
-              const { data } = await supabase.auth.refreshSession();
-              if (data?.session) setSession(data.session);
-            } finally {
-              setIsRefreshing(false);
-            }
+    const appStateSubscription = AppState.addEventListener("change", async (nextAppState) => {
+      if (appState.current.match(/inactive|background/) && nextAppState === "active") {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (currentSession) {
+          setIsRefreshing(true);
+          try {
+            const { data } = await supabase.auth.refreshSession();
+            if (data?.session) setSession(data.session);
+          } finally {
+            setIsRefreshing(false);
           }
-          setRefreshKey((k) => k + 1);
         }
-        appState.current = nextAppState;
+        setRefreshKey((k) => k + 1);
       }
-    );
+      appState.current = nextAppState;
+    });
+
+    // Notification listeners
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log("Notification received:", notification);
+    });
+
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      // When driver taps notification, navigate to trips tab
+      if (profile?.role === "driver") {
+        setActiveTab("trips");
+        setRefreshKey((k) => k + 1);
+      }
+    });
 
     return () => {
       subscription.unsubscribe();
       appStateSubscription.remove();
+      Notifications.removeNotificationSubscription(notificationListener.current);
+      Notifications.removeNotificationSubscription(responseListener.current);
     };
   }, []);
 
   async function handleSignOut() {
     try {
-      await supabase
-        .from("driver_locations")
-        .delete()
-        .eq("driver_id", session.user.id);
+      await supabase.from("driver_locations").delete().eq("driver_id", session.user.id);
     } finally {
       await supabase.auth.signOut();
     }
@@ -223,23 +248,15 @@ export default function App() {
   function renderScreen() {
     if (isRefreshing) return <View style={styles.loader}><ActivityIndicator color="#f5a623" size="large" /></View>;
     if (isAdmin) {
-      if (activeTab === "overview")
-        return <AdminOverview key={refreshKey} />;
-      if (activeTab === "log")
-        return <LogEntryScreen key={refreshKey} />;
-      if (activeTab === "entries")
-        return <AllEntriesScreen key={refreshKey} />;
-      if (activeTab === "mileage")
-        return <MileageCostsScreen key={refreshKey} />;
-      if (activeTab === "availability")
-        return <AvailabilityScreen key={refreshKey} />;
-      if (activeTab === "live")
-        return <LiveDriversScreen key={refreshKey} />;
+      if (activeTab === "overview") return <AdminOverview key={refreshKey} />;
+      if (activeTab === "log") return <LogEntryScreen key={refreshKey} />;
+      if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} />;
+      if (activeTab === "mileage") return <MileageCostsScreen key={refreshKey} />;
+      if (activeTab === "availability") return <AvailabilityScreen key={refreshKey} />;
+      if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
     } else {
-      if (activeTab === "dashboard")
-        return <DriverDashboard key={refreshKey} session={session} />;
-      if (activeTab === "trips")
-        return <MyTripsScreen key={refreshKey} session={session} />;
+      if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
+      if (activeTab === "trips") return <MyTripsScreen key={refreshKey} session={session} />;
     }
     return null;
   }
@@ -247,11 +264,7 @@ export default function App() {
   if (isAdmin) {
     return (
       <View style={styles.app}>
-        <AdminNav
-          active={activeTab}
-          onSelect={handleTabSelect}
-          onSignOut={handleSignOut}
-        />
+        <AdminNav active={activeTab} onSelect={handleTabSelect} onSignOut={handleSignOut} />
         <View style={styles.screen}>{renderScreen()}</View>
       </View>
     );
@@ -266,87 +279,35 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loader: {
-    flex: 1,
-    backgroundColor: "#0a0a0a",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  loader: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center" },
   app: { flex: 1, backgroundColor: "#0a0a0a" },
   screen: { flex: 1 },
-
   adminBar: {
-    paddingTop: 60,
-    paddingBottom: 14,
-    paddingHorizontal: 20,
-    backgroundColor: "#0a0a0a",
-    borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    paddingTop: 60, paddingBottom: 14, paddingHorizontal: 20,
+    backgroundColor: "#0a0a0a", borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
-  adminBarTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#fff",
-    letterSpacing: 2,
-  },
+  adminBarTitle: { fontSize: 16, fontWeight: "900", color: "#fff", letterSpacing: 2 },
   adminBarRight: { flexDirection: "row", alignItems: "center", gap: 14 },
-  signOutBtn: {
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  signOutText: {
-    fontSize: 9,
-    color: "#555",
-    letterSpacing: 1.5,
-    fontWeight: "700",
-  },
+  signOutBtn: { borderWidth: 1, borderColor: "#2a2a2a", paddingHorizontal: 10, paddingVertical: 5 },
+  signOutText: { fontSize: 9, color: "#555", letterSpacing: 1.5, fontWeight: "700" },
   hamburger: { gap: 5, padding: 4 },
   line: { width: 22, height: 2, backgroundColor: "#f5a623" },
-
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    justifyContent: "flex-end",
-  },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
   drawer: {
-    backgroundColor: "#111",
-    borderTopWidth: 1,
-    borderTopColor: "#222",
-    paddingTop: 28,
-    paddingBottom: 52,
-    paddingHorizontal: 28,
+    backgroundColor: "#111", borderTopWidth: 1, borderTopColor: "#222",
+    paddingTop: 28, paddingBottom: 52, paddingHorizontal: 28,
   },
-  drawerHeading: {
-    fontSize: 10,
-    color: "#444",
-    letterSpacing: 3,
-    fontWeight: "700",
-    marginBottom: 16,
-  },
+  drawerHeading: { fontSize: 10, color: "#444", letterSpacing: 3, fontWeight: "700", marginBottom: 16 },
   drawerRow: {
-    paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
   },
   drawerRowActive: {},
   drawerLabel: { fontSize: 20, fontWeight: "700", color: "#555" },
   drawerLabelActive: { color: "#f5a623" },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#f5a623" },
-
-  tabBar: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderTopColor: "#1a1a1a",
-    backgroundColor: "#0a0a0a",
-  },
+  tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#1a1a1a", backgroundColor: "#0a0a0a" },
   tab: { flex: 1, paddingVertical: 16, alignItems: "center" },
   tabActive: { borderTopWidth: 2, borderTopColor: "#f5a623" },
   tabText: { fontSize: 11, color: "#444", letterSpacing: 2, fontWeight: "700" },

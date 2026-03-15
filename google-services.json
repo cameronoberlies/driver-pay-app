@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "578420055471",
+    "project_id": "discovery-driver-portal",
+    "storage_bucket": "discovery-driver-portal.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:578420055471:android:45bfaa8f2b7d45cefc235a",
+        "android_client_info": {
+          "package_name": "com.driverportal.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwyPufF_KN8er6gPi-TbY643P3LB3ziOM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

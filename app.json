@@ -19,6 +19,7 @@
         "NSLocationWhenInUseUsageDescription": "Used to track your drive and calculate miles.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Used to track your drive in the background.",
         "NSLocationAlwaysUsageDescription": "Used to track your drive in the background.",
+        "UIBackgroundModes": ["fetch", "remote-notification"],
         "NSLocalNetworkUsageDescription": "Required to connect to development server",
         "NSBonjourServices": [
           "_expo._tcp",
@@ -32,6 +33,7 @@
     },
     "android": {
       "package": "com.driverportal.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
