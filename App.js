@@ -118,16 +118,19 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const appState = useRef(AppState.currentState);
 
   async function loadProfile(s) {
-    console.log("loadProfile called for:", s.user.id);
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", s.user.id)
       .single();
-    console.log("loadProfile result:", data, error);
+    if (error) {
+      await supabase.auth.signOut();
+      return;
+    }
     if (data) {
       setProfile(data);
       setActiveTab(data?.role === "admin" ? "overview" : "dashboard");
@@ -136,17 +139,24 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session) await loadProfile(session);
+      let s = session;
+      if (s && s.expires_at * 1000 < Date.now()) {
+        const { data } = await supabase.auth.refreshSession();
+        s = data?.session ?? null;
+      }
+      setSession(s);
+      if (s) await loadProfile(s);
       setLoading(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "INITIAL_SESSION") return;
       setSession(session);
-      if (session) await loadProfile(session);
-      else {
+      if (session) {
+        loadProfile(session);
+      } else {
         setProfile(null);
         setActiveTab(null);
       }
@@ -155,23 +165,26 @@ export default function App() {
     const appStateSubscription = AppState.addEventListener(
       "change",
       async (nextAppState) => {
-        console.log("AppState changed:", appState.current, "->", nextAppState);
         if (
           appState.current.match(/inactive|background/) &&
           nextAppState === "active"
         ) {
-          console.log("App foregrounded - refreshing session");
-          const { data, error } = await supabase.auth.refreshSession();
-          console.log(
-            "Session refresh result:",
-            data?.session?.expires_at,
-            error,
-          );
-          if (data?.session) setSession(data.session);
+          const {
+            data: { session: currentSession },
+          } = await supabase.auth.getSession();
+          if (currentSession) {
+            setIsRefreshing(true);
+            try {
+              const { data } = await supabase.auth.refreshSession();
+              if (data?.session) setSession(data.session);
+            } finally {
+              setIsRefreshing(false);
+            }
+          }
           setRefreshKey((k) => k + 1);
         }
         appState.current = nextAppState;
-      },
+      }
     );
 
     return () => {
@@ -181,11 +194,14 @@ export default function App() {
   }, []);
 
   async function handleSignOut() {
-    await supabase
-      .from("driver_locations")
-      .delete()
-      .eq("driver_id", session.user.id);
-    await supabase.auth.signOut();
+    try {
+      await supabase
+        .from("driver_locations")
+        .delete()
+        .eq("driver_id", session.user.id);
+    } finally {
+      await supabase.auth.signOut();
+    }
   }
 
   function handleTabSelect(tab) {
@@ -205,23 +221,24 @@ export default function App() {
   const isAdmin = profile?.role === "admin";
 
   function renderScreen() {
+    if (isRefreshing) return <View style={styles.loader}><ActivityIndicator color="#f5a623" size="large" /></View>;
     if (isAdmin) {
       if (activeTab === "overview")
-        return <AdminOverview key={refreshKey} session={session} />;
+        return <AdminOverview key={refreshKey} />;
       if (activeTab === "log")
-        return <LogEntryScreen key={refreshKey} session={session} />;
+        return <LogEntryScreen key={refreshKey} />;
       if (activeTab === "entries")
-        return <AllEntriesScreen key={refreshKey} session={session} />;
+        return <AllEntriesScreen key={refreshKey} />;
       if (activeTab === "mileage")
-        return <MileageCostsScreen key={refreshKey} session={session} />;
+        return <MileageCostsScreen key={refreshKey} />;
       if (activeTab === "availability")
-        return <AvailabilityScreen key={refreshKey} session={session} />;
+        return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live")
-        return <LiveDriversScreen key={refreshKey} session={session} />;
+        return <LiveDriversScreen key={refreshKey} />;
     } else {
       if (activeTab === "dashboard")
         return <DriverDashboard key={refreshKey} session={session} />;
-      if (activeTab === "trips") 
+      if (activeTab === "trips")
         return <MyTripsScreen key={refreshKey} session={session} />;
     }
     return null;

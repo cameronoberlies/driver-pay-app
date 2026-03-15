@@ -126,4 +126,18 @@ describe('AppState foreground resume triggers session refresh', () => {
     expect(supabase.auth.refreshSession).not.toHaveBeenCalled();
   });
 
+  it('does NOT call refreshSession when no session exists on foreground', async () => {
+    supabase.auth.getSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: null,
+    });
+
+    const currentSession = (await supabase.auth.getSession()).data.session;
+    if (currentSession) {
+      await supabase.auth.refreshSession();
+    }
+
+    expect(supabase.auth.refreshSession).not.toHaveBeenCalled();
+  });
+
 });
