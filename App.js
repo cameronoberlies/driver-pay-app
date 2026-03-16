@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, AppState, Platform,
 } from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets, initialWindowMetrics } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { supabase } from "./lib/supabase";
@@ -77,8 +78,9 @@ function AdminNav({ active, onSelect, onSignOut }) {
 }
 
 function DriverTabBar({ active, onSelect }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.tabBar}>
+    <View style={[styles.tabBar, { paddingBottom: insets.bottom }]}>
       {["dashboard", "trips"].map((t) => (
         <TouchableOpacity
           key={t}
@@ -263,18 +265,22 @@ export default function App() {
 
   if (isAdmin) {
     return (
-      <View style={styles.app}>
-        <AdminNav active={activeTab} onSelect={handleTabSelect} onSignOut={handleSignOut} />
-        <View style={styles.screen}>{renderScreen()}</View>
-      </View>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <View style={styles.app}>
+          <AdminNav active={activeTab} onSelect={handleTabSelect} onSignOut={handleSignOut} />
+          <View style={styles.screen}>{renderScreen()}</View>
+        </View>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <View style={styles.app}>
-      <View style={styles.screen}>{renderScreen()}</View>
-      <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
-    </View>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <View style={styles.app}>
+        <View style={styles.screen}>{renderScreen()}</View>
+        <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
+      </View>
+    </SafeAreaProvider>
   );
 }
 

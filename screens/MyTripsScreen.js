@@ -14,42 +14,52 @@ const TIMEOUT_MS = 8000;
 // ── Background task definition (must be at module level) ─────────────────────
 // This task runs natively even when iOS kills the JS runtime
 TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
-  if (error) { console.log('Background location error:', error); return; }
-  if (!data) return;
+  if (error || !data) return;
   const { locations } = data;
   if (!locations || locations.length === 0) return;
 
-  // Read stored state from AsyncStorage
   const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  const { createClient } = require('@supabase/supabase-js');
+
   try {
     const stored = await AsyncStorage.getItem('activeTrip');
     if (!stored) return;
-    const { tripId, userId, lastLat, lastLon, miles } = JSON.parse(stored);
+    const { tripId, userId, lastLat, lastLon, miles, startTime } = JSON.parse(stored);
+
+    // Get session token from AsyncStorage
+    const sessionStr = await AsyncStorage.getItem('supabase.auth.token');
+    const session = sessionStr ? JSON.parse(sessionStr) : null;
+    const accessToken = session?.currentSession?.access_token;
+    if (!accessToken) return;
+
+    // Create fresh authenticated client
+    const client = createClient(
+      process.env.EXPO_PUBLIC_SUPABASE_URL,
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+      { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
+    );
 
     const loc = locations[locations.length - 1];
     const { latitude, longitude } = loc.coords;
 
-    // Calculate new miles
     let newMiles = miles;
     if (lastLat && lastLon) {
       newMiles += getDistanceMiles(lastLat, lastLon, latitude, longitude);
     }
 
-    // Push live location to Supabase
-    await supabase.from('driver_locations').upsert({
+    await client.from('driver_locations').upsert({
       driver_id: userId,
       latitude,
       longitude,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'driver_id' });
 
-    // Update stored state
     await AsyncStorage.setItem('activeTrip', JSON.stringify({
       tripId, userId,
       lastLat: latitude,
       lastLon: longitude,
       miles: newMiles,
-      startTime: JSON.parse(stored).startTime,
+      startTime,
     }));
   } catch (e) {
     console.log('Background task error:', e);
@@ -153,6 +163,7 @@ export default function MyTripsScreen({ session }) {
 
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
+  const locationWatcherRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
 
   const AsyncStorage = require('@react-native-async-storage/async-storage').default;
@@ -182,6 +193,7 @@ export default function MyTripsScreen({ session }) {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (locationWatcherRef.current) locationWatcherRef.current.remove();
     };
   }, []);
 
@@ -271,6 +283,19 @@ export default function MyTripsScreen({ session }) {
     const startTime = Date.now();
     startTimeRef.current = startTime;
 
+    // Update UI immediately — don't wait for GPS/background task startup
+    setActiveTrip({ id: trip.id, miles: 0, elapsed: 0 });
+    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, status: 'in_progress' } : t));
+
+    // Start elapsed timer
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setActiveTrip(prev => prev ? {
+        ...prev,
+        elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000)
+      } : prev);
+    }, 1000);
+
     // Store trip state in AsyncStorage for background task
     await AsyncStorage.setItem('activeTrip', JSON.stringify({
       tripId: trip.id,
@@ -281,7 +306,23 @@ export default function MyTripsScreen({ session }) {
       startTime,
     }));
 
-    // Start background location task (survives iOS runtime kills)
+    // Foreground watcher — pushes live location to driver_locations while app is open.
+    // This is the reliable path for the Live Drivers admin view; the background task
+    // (below) takes over if iOS kills the JS runtime.
+    if (locationWatcherRef.current) locationWatcherRef.current.remove();
+    locationWatcherRef.current = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 10 },
+      async (loc) => {
+        await supabase.from('driver_locations').upsert({
+          driver_id: session.user.id,
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'driver_id' });
+      }
+    );
+
+    // Background task — survives iOS runtime kills
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
       accuracy: Location.Accuracy.High,
       timeInterval: 10000,
@@ -294,18 +335,6 @@ export default function MyTripsScreen({ session }) {
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
     });
-
-    // Start elapsed timer (JS-only, resets on app kill — that's ok)
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setActiveTrip(prev => prev ? {
-        ...prev,
-        elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000)
-      } : prev);
-    }, 1000);
-
-    setActiveTrip({ id: trip.id, miles: 0, elapsed: 0 });
-    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, status: 'in_progress' } : t));
   }
 
   // ── End trip ─────────────────────────────────────────────────────────────
@@ -317,7 +346,8 @@ export default function MyTripsScreen({ session }) {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'End Trip', style: 'destructive', onPress: async () => {
-            // Stop background location task
+            // Stop foreground watcher and background task
+            if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
             const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
             if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
 
