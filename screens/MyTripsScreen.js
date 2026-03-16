@@ -1,14 +1,60 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator, Alert, RefreshControl,
+  TouchableOpacity, ActivityIndicator, Alert, RefreshControl, AppState,
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
 import { getDistanceMiles, formatDuration } from '../lib/utils';
 
-const LIVE_LOCATION_INTERVAL = 30000;
+const LOCATION_TASK = 'background-location-task';
 const TIMEOUT_MS = 8000;
+
+// ── Background task definition (must be at module level) ─────────────────────
+// This task runs natively even when iOS kills the JS runtime
+TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
+  if (error) { console.log('Background location error:', error); return; }
+  if (!data) return;
+  const { locations } = data;
+  if (!locations || locations.length === 0) return;
+
+  // Read stored state from AsyncStorage
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  try {
+    const stored = await AsyncStorage.getItem('activeTrip');
+    if (!stored) return;
+    const { tripId, userId, lastLat, lastLon, miles } = JSON.parse(stored);
+
+    const loc = locations[locations.length - 1];
+    const { latitude, longitude } = loc.coords;
+
+    // Calculate new miles
+    let newMiles = miles;
+    if (lastLat && lastLon) {
+      newMiles += getDistanceMiles(lastLat, lastLon, latitude, longitude);
+    }
+
+    // Push live location to Supabase
+    await supabase.from('driver_locations').upsert({
+      driver_id: userId,
+      latitude,
+      longitude,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'driver_id' });
+
+    // Update stored state
+    await AsyncStorage.setItem('activeTrip', JSON.stringify({
+      tripId, userId,
+      lastLat: latitude,
+      lastLon: longitude,
+      miles: newMiles,
+      startTime: JSON.parse(stored).startTime,
+    }));
+  } catch (e) {
+    console.log('Background task error:', e);
+  }
+});
 
 function withTimeout(promise, ms) {
   return Promise.race([
@@ -67,7 +113,6 @@ function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip }) {
 
       {trip.notes ? <Text style={s.notes}>{trip.notes}</Text> : null}
 
-      {/* Live tracking indicator */}
       {isActive && (
         <View style={s.liveRow}>
           <View style={s.liveDot} />
@@ -76,7 +121,6 @@ function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip }) {
         </View>
       )}
 
-      {/* Action buttons */}
       {canStart && (
         <TouchableOpacity style={s.startBtn} onPress={() => onStart(trip)}>
           <Text style={s.startBtnText}>▶ START TRIP</Text>
@@ -105,77 +149,94 @@ export default function MyTripsScreen({ session }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
-  const [activeTrip, setActiveTrip] = useState(null); // { id, miles, elapsed }
+  const [activeTrip, setActiveTrip] = useState(null);
 
-  const waypointsRef = useRef([]);
   const startTimeRef = useRef(null);
-  const locationSubRef = useRef(null);
   const timerRef = useRef(null);
-  const liveLocationTimerRef = useRef(null);
-  const lastKnownLocationRef = useRef(null);
-  const milesRef = useRef(0);
+  const appStateRef = useRef(AppState.currentState);
 
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+
+  // ── Sync miles from background task storage ──────────────────────────────
+  async function syncMilesFromStorage() {
+    try {
+      const stored = await AsyncStorage.getItem('activeTrip');
+      if (!stored) return;
+      const { miles } = JSON.parse(stored);
+      setActiveTrip(prev => prev ? { ...prev, miles } : prev);
+    } catch {}
+  }
+
+  // ── AppState listener to sync miles when foregrounded ────────────────────
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (appStateRef.current.match(/inactive|background/) && nextState === 'active') {
+        syncMilesFromStorage();
+      }
+      appStateRef.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
+
+  // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (locationSubRef.current) locationSubRef.current.remove();
       if (timerRef.current) clearInterval(timerRef.current);
-      if (liveLocationTimerRef.current) clearInterval(liveLocationTimerRef.current);
     };
   }, []);
 
   async function load() {
-  setError(false);
-  try {
-    const userId = session.user.id;
-    const { data, error: err } = await withTimeout(
-      supabase
-        .from('trips')
-        .select('*')
-        .or(`driver_id.eq.${userId},second_driver_id.eq.${userId}`)
-        .in('status', ['pending', 'in_progress', 'completed'])
-        .order('scheduled_pickup', { ascending: true }),
-      TIMEOUT_MS
-    );
-    if (err) throw err;
-    setTrips(data ?? []);
+    setError(false);
+    try {
+      const userId = session.user.id;
+      const { data, error: err } = await withTimeout(
+        supabase
+          .from('trips')
+          .select('*')
+          .or(`driver_id.eq.${userId},second_driver_id.eq.${userId}`)
+          .in('status', ['pending', 'in_progress', 'completed'])
+          .order('scheduled_pickup', { ascending: true }),
+        TIMEOUT_MS
+      );
+      if (err) throw err;
+      setTrips(data ?? []);
 
-    // Rehydrate activeTrip if there's an in_progress trip
-    const inProgress = (data ?? []).find(
-      t => t.status === 'in_progress' && t.designated_driver_id === userId
-    );
-    if (inProgress && !activeTrip) {
-      setActiveTrip({ id: inProgress.id, miles: inProgress.miles ?? 0, elapsed: 0 });
+      // Rehydrate activeTrip if there's an in_progress trip
+      const inProgress = (data ?? []).find(
+        t => t.status === 'in_progress' && t.designated_driver_id === userId
+      );
+      if (inProgress) {
+        // Check if background task has stored state
+        const stored = await AsyncStorage.getItem('activeTrip');
+        const storedData = stored ? JSON.parse(stored) : null;
+        const miles = storedData?.miles ?? inProgress.miles ?? 0;
+        const startTime = storedData?.startTime ?? Date.now();
+        startTimeRef.current = startTime;
+
+        setActiveTrip({ id: inProgress.id, miles, elapsed: Math.floor((Date.now() - startTime) / 1000) });
+
+        // Restart elapsed timer
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+          setActiveTrip(prev => prev ? {
+            ...prev,
+            elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000)
+          } : prev);
+        }, 1000);
+      }
+
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-
-  } catch {
-    setError(true);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
   }
-}
 
   useEffect(() => { load(); }, []);
   function onRefresh() { setRefreshing(true); load(); }
 
-  // ── GPS helpers ──────────────────────────────────────────────────────────────
-
-  const pushLiveLocation = async () => {
-    if (!lastKnownLocationRef.current || !session?.user?.id) return;
-    const { latitude, longitude } = lastKnownLocationRef.current;
-    await supabase.from('driver_locations').upsert({
-      driver_id: session.user.id,
-      latitude,
-      longitude,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'driver_id' });
-  };
-
-  const clearLiveLocation = async () => {
-    if (!session?.user?.id) return;
-    await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
-  };
-
+  // ── GPS helpers ──────────────────────────────────────────────────────────
   const requestPermissions = async () => {
     const { status: fg } = await Location.requestForegroundPermissionsAsync();
     if (fg !== 'granted') {
@@ -190,13 +251,16 @@ export default function MyTripsScreen({ session }) {
     return true;
   };
 
-  // ── Start trip ───────────────────────────────────────────────────────────────
+  const clearLiveLocation = async () => {
+    if (!session?.user?.id) return;
+    await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
+  };
 
+  // ── Start trip ───────────────────────────────────────────────────────────
   async function handleStart(trip) {
     const permitted = await requestPermissions();
     if (!permitted) return;
 
-    // Update trip status in Supabase
     const { error: err } = await supabase
       .from('trips')
       .update({ status: 'in_progress', actual_start: new Date().toISOString() })
@@ -204,42 +268,47 @@ export default function MyTripsScreen({ session }) {
 
     if (err) { Alert.alert('Failed to start trip', err.message); return; }
 
-    // Start GPS
-    waypointsRef.current = [];
-    milesRef.current = 0;
-    startTimeRef.current = Date.now();
+    const startTime = Date.now();
+    startTimeRef.current = startTime;
 
-    const sub = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 50 },
-      (loc) => {
-        const { latitude, longitude } = loc.coords;
-        lastKnownLocationRef.current = { latitude, longitude };
-        if (waypointsRef.current.length === 0) pushLiveLocation();
-        const waypoints = waypointsRef.current;
-        if (waypoints.length > 0) {
-          const last = waypoints[waypoints.length - 1];
-          const added = getDistanceMiles(last.lat, last.lon, latitude, longitude);
-          milesRef.current += added;
-          setActiveTrip(prev => prev ? { ...prev, miles: milesRef.current } : prev);
-        }
-        waypointsRef.current.push({ lat: latitude, lon: longitude });
-      }
-    );
+    // Store trip state in AsyncStorage for background task
+    await AsyncStorage.setItem('activeTrip', JSON.stringify({
+      tripId: trip.id,
+      userId: session.user.id,
+      lastLat: null,
+      lastLon: null,
+      miles: 0,
+      startTime,
+    }));
 
-    locationSubRef.current = sub;
+    // Start background location task (survives iOS runtime kills)
+    await Location.startLocationUpdatesAsync(LOCATION_TASK, {
+      accuracy: Location.Accuracy.High,
+      timeInterval: 10000,
+      distanceInterval: 50,
+      foregroundService: {
+        notificationTitle: 'Trip in Progress',
+        notificationBody: 'Discovery Driver Portal is tracking your location.',
+        notificationColor: '#f5a623',
+      },
+      pausesUpdatesAutomatically: false,
+      showsBackgroundLocationIndicator: true,
+    });
+
+    // Start elapsed timer (JS-only, resets on app kill — that's ok)
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      setActiveTrip(prev => prev ? { ...prev, elapsed } : prev);
+      setActiveTrip(prev => prev ? {
+        ...prev,
+        elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000)
+      } : prev);
     }, 1000);
-    liveLocationTimerRef.current = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL);
-    pushLiveLocation();
 
     setActiveTrip({ id: trip.id, miles: 0, elapsed: 0 });
     setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, status: 'in_progress' } : t));
   }
 
-  // ── End trip ─────────────────────────────────────────────────────────────────
-
+  // ── End trip ─────────────────────────────────────────────────────────────
   async function handleEnd(trip) {
     Alert.alert(
       'End Trip?',
@@ -248,14 +317,26 @@ export default function MyTripsScreen({ session }) {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'End Trip', style: 'destructive', onPress: async () => {
-            // Stop GPS
-            if (locationSubRef.current) { locationSubRef.current.remove(); locationSubRef.current = null; }
+            // Stop background location task
+            const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
+            if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
+
             if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-            if (liveLocationTimerRef.current) { clearInterval(liveLocationTimerRef.current); liveLocationTimerRef.current = null; }
             clearLiveLocation();
 
-            const finalMiles = parseFloat(milesRef.current.toFixed(1));
-            const finalDriveTime = parseFloat(((Date.now() - startTimeRef.current) / 3600000).toFixed(2));
+            // Get final miles from AsyncStorage (background task may have updated it)
+            let finalMiles = 0;
+            let finalDriveTime = 0;
+            try {
+              const stored = await AsyncStorage.getItem('activeTrip');
+              if (stored) {
+                const { miles, startTime } = JSON.parse(stored);
+                finalMiles = parseFloat(miles.toFixed(1));
+                finalDriveTime = parseFloat(((Date.now() - startTime) / 3600000).toFixed(2));
+              }
+            } catch {}
+
+            await AsyncStorage.removeItem('activeTrip');
 
             const { error: err } = await supabase
               .from('trips')
@@ -270,10 +351,6 @@ export default function MyTripsScreen({ session }) {
             if (err) { Alert.alert('Failed to end trip', err.message); return; }
 
             setActiveTrip(null);
-            milesRef.current = 0;
-            waypointsRef.current = [];
-            lastKnownLocationRef.current = null;
-
             setTrips(prev => prev.map(t =>
               t.id === trip.id
                 ? { ...t, status: 'completed', miles: finalMiles, hours: finalDriveTime }
@@ -285,8 +362,7 @@ export default function MyTripsScreen({ session }) {
     );
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
-
+  // ── Render ───────────────────────────────────────────────────────────────
   if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
 
   if (error) return (
