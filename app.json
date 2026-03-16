@@ -21,15 +21,9 @@
         "NSLocationAlwaysUsageDescription": "Used to track your drive in the background.",
         "UIBackgroundModes": ["fetch", "remote-notification"],
         "NSLocalNetworkUsageDescription": "Required to connect to development server",
-        "NSBonjourServices": [
-          "_expo._tcp",
-          "_expo._tcp"
-        ]
+        "NSBonjourServices": ["_expo._tcp", "_expo._tcp"]
       },
-      "backgroundModes": [
-        "location",
-        "location"
-      ]
+      "backgroundModes": ["location", "location"]
     },
     "android": {
       "package": "com.driverportal.app",
@@ -47,8 +41,8 @@
         "FOREGROUND_SERVICE_LOCATION"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#0a0a0a",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       }
