@@ -7,17 +7,15 @@ const supabase = createClient(
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
-async function sendPushNotification(
-  token: string,
-  title: string,
-  body: string,
-) {
+async function sendPushNotification(token: string, title: string, body: string) {
   if (!token.startsWith("ExponentPushToken")) return;
-  await fetch(EXPO_PUSH_URL, {
+  const res = await fetch(EXPO_PUSH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ to: token, title, body, sound: "default" }),
   });
+  const result = await res.json();
+  console.log("Expo push result:", JSON.stringify(result));
 }
 
 Deno.serve(async () => {

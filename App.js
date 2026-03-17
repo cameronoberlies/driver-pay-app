@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, AppState, Platform,
+  ActivityIndicator, Modal, AppState, Platform
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets, initialWindowMetrics } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
@@ -97,9 +97,10 @@ function DriverTabBar({ active, onSelect }) {
 }
 
 async function registerForPushNotifications(userId) {
-  if (!Device.isDevice) return; // skip in simulator
+  if (!Device.isDevice) { console.log('Push: skipped - not a device'); return; }
 
   const { status: existing } = await Notifications.getPermissionsAsync();
+  console.log('Push: existing permission status:', existing);
   let finalStatus = existing;
 
   if (existing !== "granted") {
@@ -107,27 +108,31 @@ async function registerForPushNotifications(userId) {
     finalStatus = status;
   }
 
-  if (finalStatus !== "granted") return;
+  if (finalStatus !== "granted") { console.log('Push: permission not granted'); return; }
 
-  const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId: "2fa6ed9e-334f-4d4e-83f4-753b40bf843b",
-  });
-
-  const token = tokenData.data;
-
-  // Save token to Supabase profiles table
-  await supabase
-    .from("profiles")
-    .update({ push_token: token })
-    .eq("id", userId);
-
-  // Required for Android
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: "2fa6ed9e-334f-4d4e-83f4-753b40bf843b",
     });
+    console.log('Push: token obtained:', tokenData.data);
+    const token = tokenData.data;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ push_token: token })
+      .eq("id", userId);
+    console.log('Push: saved to Supabase, error:', error);
+
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "default",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+      });
+    }
+  } catch (e) {
+    console.log('Push: error getting token:', e.message);
+    
   }
 }
 
