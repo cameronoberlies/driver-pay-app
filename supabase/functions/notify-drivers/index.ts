@@ -2,12 +2,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
-async function sendPushNotification(token: string, title: string, body: string) {
+async function sendPushNotification(
+  token: string,
+  title: string,
+  body: string,
+) {
   if (!token.startsWith("ExponentPushToken")) return;
   await fetch(EXPO_PUSH_URL, {
     method: "POST",
@@ -19,25 +23,29 @@ async function sendPushNotification(token: string, title: string, body: string) 
 Deno.serve(async () => {
   const now = new Date();
   const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-  const thirtyFiveMinutesAgo = new Date(now.getTime() - 35 * 60 * 1000);
+  const sixtyMinutesAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
   // Find trips where pickup was 30-35 minutes ago, still pending, not yet notified
   const { data: trips, error } = await supabase
     .from("trips")
-    .select(`
+    .select(
+      `
       id, city, crm_id, trip_type, scheduled_pickup,
       driver_id, second_driver_id,
       driver:profiles!trips_driver_id_fkey(push_token),
       second_driver:profiles!trips_second_driver_id_fkey(push_token)
-    `)
+    `,
+    )
     .eq("status", "pending")
     .is("notified_at", null)
-    .gte("scheduled_pickup", thirtyFiveMinutesAgo.toISOString())
+    .gte("scheduled_pickup", sixtyMinutesAgo.toISOString())
     .lte("scheduled_pickup", thirtyMinutesAgo.toISOString());
 
   if (error) {
     console.error("Error fetching trips:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+    });
   }
 
   if (!trips || trips.length === 0) {
