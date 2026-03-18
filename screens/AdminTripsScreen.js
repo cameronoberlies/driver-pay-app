@@ -10,6 +10,7 @@ import {
   TextInput,
   Modal,
   Alert,
+  Picker,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -21,18 +22,17 @@ const STATUS_COLORS = {
   finalized: '#6b7585',
 };
 
-export default function AdminTripsScreen() {
+export default function AdminTripsScreen({ allProfiles }) {
   const [trips, setTrips] = useState([]);
-  const [allProfiles, setAllProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState('active'); // 'active' | 'all' | 'create'
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
 
-  // Load trips + profiles
+  // Load trips
   useEffect(() => {
-    loadData();
+    loadTrips();
 
     // Subscribe to realtime updates
     const subscription = supabase
@@ -42,7 +42,7 @@ export default function AdminTripsScreen() {
         { event: '*', schema: 'public', table: 'trips' },
         (payload) => {
           console.log('Trip change:', payload);
-          loadData();
+          loadTrips();
         }
       )
       .subscribe();
@@ -52,25 +52,24 @@ export default function AdminTripsScreen() {
     };
   }, []);
 
-  async function loadData() {
+  async function loadTrips() {
     setLoading(true);
-    const [tripsRes, profilesRes] = await Promise.all([
-      supabase.from('trips').select('*').order('scheduled_pickup', { ascending: false }),
-      supabase.from('profiles').select('*'),
-    ]);
+    const { data, error } = await supabase
+      .from('trips')
+      .select('*')
+      .order('scheduled_pickup', { ascending: false });
 
-    if (tripsRes.error) console.error('Error loading trips:', tripsRes.error);
-    else setTrips(tripsRes.data || []);
-
-    if (profilesRes.error) console.error('Error loading profiles:', profilesRes.error);
-    else setAllProfiles(profilesRes.data || []);
-
+    if (error) {
+      console.error('Error loading trips:', error);
+    } else {
+      setTrips(data || []);
+    }
     setLoading(false);
   }
 
   async function handleRefresh() {
     setRefreshing(true);
-    await loadData();
+    await loadTrips();
     setRefreshing(false);
   }
 
@@ -126,33 +125,23 @@ export default function AdminTripsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Trips List */}
+      {/* Header */}
+      <View style={s.header}>
+        <Text style={s.sectionTitle}>
+          {view === 'active' ? 'ACTIVE TRIPS' : 'ALL TRIPS'}
+        </Text>
+        <Text style={s.sectionCount}>{displayedTrips.length} trips</Text>
+      </View>
+
+      {/* Trips List - CARD LAYOUT instead of table */}
       <ScrollView
         style={s.scrollView}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        <View style={s.header}>
-          <Text style={s.sectionTitle}>
-            {view === 'active' ? 'ACTIVE TRIPS' : 'ALL TRIPS'}
-          </Text>
-          <Text style={s.sectionCount}>{displayedTrips.length} trips</Text>
-        </View>
-
-        {/* Table Header */}
-        <View style={s.tableHeader}>
-          <Text style={[s.headerCell, { flex: 1 }]}>STATUS</Text>
-          <Text style={[s.headerCell, { flex: 0.8 }]}>TYPE</Text>
-          <Text style={[s.headerCell, { flex: 1.2 }]}>DRIVER(S)</Text>
-          <Text style={[s.headerCell, { flex: 1 }]}>CRM ID</Text>
-          <Text style={[s.headerCell, { flex: 1.2 }]}>CITY</Text>
-          <Text style={[s.headerCell, { flex: 1 }]}>PICKUP</Text>
-        </View>
-
-        {/* Trip Rows */}
         {displayedTrips.map((trip) => (
-          <TripRow
+          <TripCard
             key={trip.id}
             trip={trip}
             allProfiles={allProfiles}
@@ -194,8 +183,8 @@ export default function AdminTripsScreen() {
   );
 }
 
-// ── TRIP ROW ─────────────────────────────────────────────────────────────────
-function TripRow({ trip, allProfiles, onPress }) {
+// ── TRIP CARD (New Card Layout) ──────────────────────────────────────────────
+function TripCard({ trip, allProfiles, onPress }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -206,42 +195,62 @@ function TripRow({ trip, allProfiles, onPress }) {
     ? new Date(trip.scheduled_pickup).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
+      })
+    : null;
+  const pickupTime = trip.scheduled_pickup
+    ? new Date(trip.scheduled_pickup).toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
       })
-    : '—';
+    : null;
 
   return (
-    <TouchableOpacity style={s.row} onPress={onPress}>
-      <View style={[s.cell, { flex: 1 }]}>
-        <View style={[s.statusBadge, { borderColor: statusColor }]}>
+    <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.7}>
+      {/* Top Row: Status + CRM + Type */}
+      <View style={s.cardTop}>
+        <View style={[s.statusBadge, { borderColor: statusColor, backgroundColor: `${statusColor}15` }]}>
           <Text style={[s.statusText, { color: statusColor }]}>
-            {trip.status.replace('_', ' ').toUpperCase()}
+            {trip.status === 'in_progress' ? 'IN PROGRESS' : trip.status.toUpperCase()}
           </Text>
         </View>
-      </View>
-      <View style={[s.cell, { flex: 0.8 }]}>
-        <Text style={s.typeText}>
+        <Text style={s.crmId}>{trip.crm_id || '—'}</Text>
+        <Text style={s.tripType}>
           {trip.trip_type === 'fly' ? '✈ FLY' : '🚗 DRIVE'}
         </Text>
       </View>
-      <View style={[s.cell, { flex: 1.2 }]}>
-        <Text style={s.driverText}>{driver1?.name || '—'}</Text>
+
+      {/* Main Info Row */}
+      <View style={s.cardMain}>
+        <View style={s.cardLeft}>
+          <Text style={s.cityText}>{trip.city}</Text>
+          {pickupDate && (
+            <Text style={s.pickupText}>
+              {pickupDate} at {pickupTime}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      {/* Drivers Row */}
+      <View style={s.driversRow}>
+        <Text style={s.driverLabel}>
+          {driver1?.name || 'Unknown'}
+          {driver1?.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+        </Text>
         {driver2 && (
-          <Text style={[s.driverText, { fontSize: 10, color: '#6b7585' }]}>
+          <Text style={s.driverLabel2}>
             + {driver2.name}
+            {driver2.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
           </Text>
         )}
       </View>
-      <View style={[s.cell, { flex: 1 }]}>
-        <Text style={s.crmText}>{trip.crm_id || '—'}</Text>
-      </View>
-      <View style={[s.cell, { flex: 1.2 }]}>
-        <Text style={s.cityText}>{trip.city}</Text>
-      </View>
-      <View style={[s.cell, { flex: 1 }]}>
-        <Text style={s.pickupText}>{pickupDate}</Text>
-      </View>
+
+      {/* Notes (if present) */}
+      {trip.notes && (
+        <Text style={s.notesText} numberOfLines={2}>
+          {trip.notes}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -357,47 +366,40 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <Text style={s.label}>
             {form.trip_type === 'drive' ? 'Driver 1 (Chase Car)' : 'Assigned Driver'}
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <Picker
+            selectedValue={form.driver_id}
+            onValueChange={(value) => set('driver_id', value)}
+            style={s.picker}
+          >
             {drivers.map((d) => (
-              <TouchableOpacity
+              <Picker.Item
                 key={d.id}
-                style={[s.driverPill, form.driver_id === d.id && s.driverPillActive]}
-                onPress={() => set('driver_id', d.id)}
-              >
-                <Text style={[s.driverPillText, form.driver_id === d.id && s.driverPillTextActive]}>
-                  {d.name}{d.willing_to_fly ? ' (F)' : ''}
-                </Text>
-              </TouchableOpacity>
+                label={`${d.name}${d.willing_to_fly ? ' (F)' : ''}`}
+                value={d.id}
+              />
             ))}
-          </ScrollView>
+          </Picker>
         </View>
 
         {form.trip_type === 'drive' && (
           <View style={s.field}>
             <Text style={s.label}>Driver 2 (Drives Vehicle Back)</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <TouchableOpacity
-                style={[s.driverPill, form.second_driver_id === '' && s.driverPillActive]}
-                onPress={() => set('second_driver_id', '')}
-              >
-                <Text style={[s.driverPillText, form.second_driver_id === '' && s.driverPillTextActive]}>
-                  — None —
-                </Text>
-              </TouchableOpacity>
+            <Picker
+              selectedValue={form.second_driver_id}
+              onValueChange={(value) => set('second_driver_id', value)}
+              style={s.picker}
+            >
+              <Picker.Item label="— Select —" value="" />
               {drivers
                 .filter((d) => d.id !== form.driver_id)
                 .map((d) => (
-                  <TouchableOpacity
+                  <Picker.Item
                     key={d.id}
-                    style={[s.driverPill, form.second_driver_id === d.id && s.driverPillActive]}
-                    onPress={() => set('second_driver_id', d.id)}
-                  >
-                    <Text style={[s.driverPillText, form.second_driver_id === d.id && s.driverPillTextActive]}>
-                      {d.name}{d.willing_to_fly ? ' (F)' : ''}
-                    </Text>
-                  </TouchableOpacity>
+                    label={`${d.name}${d.willing_to_fly ? ' (F)' : ''}`}
+                    value={d.id}
+                  />
                 ))}
-            </ScrollView>
+            </Picker>
           </View>
         )}
 
@@ -416,10 +418,11 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <Text style={s.label}>CRM ID *</Text>
           <TextInput
             style={s.input}
-            placeholder="AB123"
+            placeholder="GL924"
             placeholderTextColor="#6b7585"
             value={form.crm_id}
             onChangeText={(text) => set('crm_id', text)}
+            autoCapitalize="characters"
           />
         </View>
 
@@ -729,7 +732,7 @@ const s = StyleSheet.create({
   },
   tab: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: '#1a1d24',
     borderRadius: 4,
@@ -750,7 +753,7 @@ const s = StyleSheet.create({
   createBtn: {
     marginLeft: 'auto',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     backgroundColor: '#f5a623',
     borderRadius: 4,
   },
@@ -781,65 +784,92 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: '#6b7585',
   },
-  tableHeader: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+  // CARD LAYOUT (New!)
+  card: {
     backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderWidth: 1,
+    borderColor: '#1a1d24',
+    borderRadius: 8,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
   },
-  headerCell: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: '#6b7585',
-  },
-  row: {
+  cardTop: {
     flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
-  },
-  cell: {
-    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
   },
   statusBadge: {
-    alignSelf: 'flex-start',
     borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
   statusText: {
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-  typeText: {
-    fontSize: 11,
-    color: '#d4d8df',
-  },
-  driverText: {
-    fontSize: 12,
-    color: '#d4d8df',
-  },
-  crmText: {
-    fontSize: 12,
-    fontWeight: '600',
+  crmId: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#f5a623',
+    letterSpacing: 0.5,
+  },
+  tripType: {
+    fontSize: 11,
+    color: '#6b7585',
+    marginLeft: 'auto',
+  },
+  cardMain: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cardLeft: {
+    flex: 1,
   },
   cityText: {
-    fontSize: 11,
+    fontSize: 16,
+    fontWeight: '600',
     color: '#d4d8df',
+    marginBottom: 4,
   },
   pickupText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#6b7585',
   },
+  driversRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  driverLabel: {
+    fontSize: 13,
+    color: '#d4d8df',
+    fontWeight: '500',
+  },
+  driverLabel2: {
+    fontSize: 13,
+    color: '#6b7585',
+    fontWeight: '500',
+  },
+  flyBadge: {
+    color: '#f5a623',
+    fontSize: 11,
+  },
+  notesText: {
+    fontSize: 12,
+    color: '#6b7585',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1d24',
+    fontStyle: 'italic',
+  },
   emptyState: {
-    padding: 40,
+    padding: 60,
     alignItems: 'center',
   },
   emptyText: {
@@ -895,25 +925,11 @@ const s = StyleSheet.create({
     fontSize: 14,
     color: '#d4d8df',
   },
-  driverPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  picker: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: '#1a1d24',
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  driverPillActive: {
-    backgroundColor: 'rgba(245, 166, 35, 0.1)',
-    borderColor: '#f5a623',
-  },
-  driverPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7585',
-  },
-  driverPillTextActive: {
-    color: '#f5a623',
+    color: '#d4d8df',
   },
   segmentControl: {
     flexDirection: 'row',
