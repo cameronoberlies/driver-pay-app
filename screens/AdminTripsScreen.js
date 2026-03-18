@@ -10,7 +10,6 @@ import {
   TextInput,
   Modal,
   Alert,
-  Picker,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -22,17 +21,18 @@ const STATUS_COLORS = {
   finalized: '#6b7585',
 };
 
-export default function AdminTripsScreen({ allProfiles }) {
+export default function AdminTripsScreen() {
   const [trips, setTrips] = useState([]);
+  const [allProfiles, setAllProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState('active'); // 'active' | 'all' | 'create'
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
 
-  // Load trips
+  // Load trips + profiles
   useEffect(() => {
-    loadTrips();
+    loadData();
 
     // Subscribe to realtime updates
     const subscription = supabase
@@ -42,7 +42,7 @@ export default function AdminTripsScreen({ allProfiles }) {
         { event: '*', schema: 'public', table: 'trips' },
         (payload) => {
           console.log('Trip change:', payload);
-          loadTrips();
+          loadData();
         }
       )
       .subscribe();
@@ -52,24 +52,25 @@ export default function AdminTripsScreen({ allProfiles }) {
     };
   }, []);
 
-  async function loadTrips() {
+  async function loadData() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('trips')
-      .select('*')
-      .order('scheduled_pickup', { ascending: false });
+    const [tripsRes, profilesRes] = await Promise.all([
+      supabase.from('trips').select('*').order('scheduled_pickup', { ascending: false }),
+      supabase.from('profiles').select('*'),
+    ]);
 
-    if (error) {
-      console.error('Error loading trips:', error);
-    } else {
-      setTrips(data || []);
-    }
+    if (tripsRes.error) console.error('Error loading trips:', tripsRes.error);
+    else setTrips(tripsRes.data || []);
+
+    if (profilesRes.error) console.error('Error loading profiles:', profilesRes.error);
+    else setAllProfiles(profilesRes.data || []);
+
     setLoading(false);
   }
 
   async function handleRefresh() {
     setRefreshing(true);
-    await loadTrips();
+    await loadData();
     setRefreshing(false);
   }
 
@@ -133,7 +134,7 @@ export default function AdminTripsScreen({ allProfiles }) {
         <Text style={s.sectionCount}>{displayedTrips.length} trips</Text>
       </View>
 
-      {/* Trips List - CARD LAYOUT instead of table */}
+      {/* Trips List - CARD LAYOUT */}
       <ScrollView
         style={s.scrollView}
         refreshControl={
@@ -183,7 +184,7 @@ export default function AdminTripsScreen({ allProfiles }) {
   );
 }
 
-// ── TRIP CARD (New Card Layout) ──────────────────────────────────────────────
+// ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────
 function TripCard({ trip, allProfiles, onPress }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
@@ -366,40 +367,47 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <Text style={s.label}>
             {form.trip_type === 'drive' ? 'Driver 1 (Chase Car)' : 'Assigned Driver'}
           </Text>
-          <Picker
-            selectedValue={form.driver_id}
-            onValueChange={(value) => set('driver_id', value)}
-            style={s.picker}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {drivers.map((d) => (
-              <Picker.Item
+              <TouchableOpacity
                 key={d.id}
-                label={`${d.name}${d.willing_to_fly ? ' (F)' : ''}`}
-                value={d.id}
-              />
+                style={[s.driverPill, form.driver_id === d.id && s.driverPillActive]}
+                onPress={() => set('driver_id', d.id)}
+              >
+                <Text style={[s.driverPillText, form.driver_id === d.id && s.driverPillTextActive]}>
+                  {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                </Text>
+              </TouchableOpacity>
             ))}
-          </Picker>
+          </ScrollView>
         </View>
 
         {form.trip_type === 'drive' && (
           <View style={s.field}>
             <Text style={s.label}>Driver 2 (Drives Vehicle Back)</Text>
-            <Picker
-              selectedValue={form.second_driver_id}
-              onValueChange={(value) => set('second_driver_id', value)}
-              style={s.picker}
-            >
-              <Picker.Item label="— Select —" value="" />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[s.driverPill, form.second_driver_id === '' && s.driverPillActive]}
+                onPress={() => set('second_driver_id', '')}
+              >
+                <Text style={[s.driverPillText, form.second_driver_id === '' && s.driverPillTextActive]}>
+                  — None —
+                </Text>
+              </TouchableOpacity>
               {drivers
                 .filter((d) => d.id !== form.driver_id)
                 .map((d) => (
-                  <Picker.Item
+                  <TouchableOpacity
                     key={d.id}
-                    label={`${d.name}${d.willing_to_fly ? ' (F)' : ''}`}
-                    value={d.id}
-                  />
+                    style={[s.driverPill, form.second_driver_id === d.id && s.driverPillActive]}
+                    onPress={() => set('second_driver_id', d.id)}
+                  >
+                    <Text style={[s.driverPillText, form.second_driver_id === d.id && s.driverPillTextActive]}>
+                      {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                    </Text>
+                  </TouchableOpacity>
                 ))}
-            </Picker>
+            </ScrollView>
           </View>
         )}
 
@@ -418,11 +426,10 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <Text style={s.label}>CRM ID *</Text>
           <TextInput
             style={s.input}
-            placeholder="GL924"
+            placeholder="AB123"
             placeholderTextColor="#6b7585"
             value={form.crm_id}
             onChangeText={(text) => set('crm_id', text)}
-            autoCapitalize="characters"
           />
         </View>
 
@@ -784,7 +791,7 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: '#6b7585',
   },
-  // CARD LAYOUT (New!)
+  // CARD LAYOUT
   card: {
     backgroundColor: 'rgba(255, 255, 255, 0.02)',
     borderWidth: 1,
@@ -925,11 +932,25 @@ const s = StyleSheet.create({
     fontSize: 14,
     color: '#d4d8df',
   },
-  picker: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  driverPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#1a1d24',
-    color: '#d4d8df',
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  driverPillActive: {
+    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+    borderColor: '#f5a623',
+  },
+  driverPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7585',
+  },
+  driverPillTextActive: {
+    color: '#f5a623',
   },
   segmentControl: {
     flexDirection: 'row',
