@@ -17,6 +17,7 @@ import MileageCostsScreen from "./screens/MileageCostsScreen";
 import AvailabilityScreen from "./screens/AvailabilityScreen";
 import LiveDriversScreen from "./screens/LiveDriversScreen";
 import DriverAvailabilityScreen from './screens/DriverAvailabilityScreen';
+import AdminTripsScreen from "./screens/AdminTripsScreen";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -33,6 +34,7 @@ const ADMIN_TABS = [
   { id: "mileage", label: "Mileage Costs" },
   { id: "availability", label: "Availability" },
   { id: "live", label: "Live Drivers" },
+  { id: "trips", label: "Trips" },
 ];
 
 function AdminNav({ active, onSelect, onSignOut }) {
@@ -261,6 +263,7 @@ export default function App() {
       if (activeTab === "mileage") return <MileageCostsScreen key={refreshKey} />;
       if (activeTab === "availability") return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
+      if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
     } else {
       if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips") return <MyTripsScreen key={refreshKey} session={session} />;

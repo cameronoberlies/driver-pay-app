@@ -1,0 +1,1072 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  Modal,
+  Alert,
+} from 'react-native';
+import { supabase } from '../lib/supabase';
+
+// Trip status colors
+const STATUS_COLORS = {
+  pending: '#3b8cf7',
+  in_progress: '#f5a623',
+  completed: '#4caf50',
+  finalized: '#6b7585',
+};
+
+export default function AdminTripsScreen() {
+  const [trips, setTrips] = useState([]);
+  const [allProfiles, setAllProfiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [view, setView] = useState('active'); // 'active' | 'all' | 'create'
+  const [selectedTrip, setSelectedTrip] = useState(null);
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+
+  // Load trips + profiles
+  useEffect(() => {
+    loadData();
+
+    // Subscribe to realtime updates
+    const subscription = supabase
+      .channel('trips_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trips' },
+        (payload) => {
+          console.log('Trip change:', payload);
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function loadData() {
+    setLoading(true);
+    const [tripsRes, profilesRes] = await Promise.all([
+      supabase.from('trips').select('*').order('scheduled_pickup', { ascending: false }),
+      supabase.from('profiles').select('*'),
+    ]);
+
+    if (tripsRes.error) console.error('Error loading trips:', tripsRes.error);
+    else setTrips(tripsRes.data || []);
+
+    if (profilesRes.error) console.error('Error loading profiles:', profilesRes.error);
+    else setAllProfiles(profilesRes.data || []);
+
+    setLoading(false);
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }
+
+  const activeTrips = trips.filter(
+    (t) => t.status === 'pending' || t.status === 'in_progress'
+  );
+
+  const displayedTrips = view === 'active' ? activeTrips : trips;
+
+  if (loading && !refreshing) {
+    return (
+      <View style={s.container}>
+        <ActivityIndicator size="large" color="#f5a623" style={{ marginTop: 100 }} />
+      </View>
+    );
+  }
+
+  if (view === 'create') {
+    return (
+      <CreateTripView
+        drivers={allProfiles.filter((p) => p.role === 'driver')}
+        onBack={() => setView('active')}
+        onCreated={(trip) => {
+          setTrips([trip, ...trips]);
+          setView('active');
+        }}
+      />
+    );
+  }
+
+  return (
+    <View style={s.container}>
+      {/* Tab Navigation */}
+      <View style={s.tabBar}>
+        <TouchableOpacity
+          style={[s.tab, view === 'active' && s.tabActive]}
+          onPress={() => setView('active')}
+        >
+          <Text style={[s.tabText, view === 'active' && s.tabTextActive]}>
+            ACTIVE ({activeTrips.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.tab, view === 'all' && s.tabActive]}
+          onPress={() => setView('all')}
+        >
+          <Text style={[s.tabText, view === 'all' && s.tabTextActive]}>
+            ALL TRIPS ({trips.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.createBtn} onPress={() => setView('create')}>
+          <Text style={s.createBtnText}>+ CREATE TRIP</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Trips List */}
+      <ScrollView
+        style={s.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        <View style={s.header}>
+          <Text style={s.sectionTitle}>
+            {view === 'active' ? 'ACTIVE TRIPS' : 'ALL TRIPS'}
+          </Text>
+          <Text style={s.sectionCount}>{displayedTrips.length} trips</Text>
+        </View>
+
+        {/* Table Header */}
+        <View style={s.tableHeader}>
+          <Text style={[s.headerCell, { flex: 1 }]}>STATUS</Text>
+          <Text style={[s.headerCell, { flex: 0.8 }]}>TYPE</Text>
+          <Text style={[s.headerCell, { flex: 1.2 }]}>DRIVER(S)</Text>
+          <Text style={[s.headerCell, { flex: 1 }]}>CRM ID</Text>
+          <Text style={[s.headerCell, { flex: 1.2 }]}>CITY</Text>
+          <Text style={[s.headerCell, { flex: 1 }]}>PICKUP</Text>
+        </View>
+
+        {/* Trip Rows */}
+        {displayedTrips.map((trip) => (
+          <TripRow
+            key={trip.id}
+            trip={trip}
+            allProfiles={allProfiles}
+            onPress={() => {
+              setSelectedTrip(trip);
+              if (trip.status === 'completed') {
+                setShowFinalizeModal(true);
+              }
+            }}
+          />
+        ))}
+
+        {displayedTrips.length === 0 && (
+          <View style={s.emptyState}>
+            <Text style={s.emptyText}>
+              {view === 'active' ? 'No active trips' : 'No trips yet'}
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Finalize Modal */}
+      {showFinalizeModal && selectedTrip && (
+        <FinalizeTripModal
+          trip={selectedTrip}
+          allProfiles={allProfiles}
+          onClose={() => {
+            setShowFinalizeModal(false);
+            setSelectedTrip(null);
+          }}
+          onFinalized={(updatedTrip) => {
+            setTrips(trips.map((t) => (t.id === updatedTrip.id ? updatedTrip : t)));
+            setShowFinalizeModal(false);
+            setSelectedTrip(null);
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+// ── TRIP ROW ─────────────────────────────────────────────────────────────────
+function TripRow({ trip, allProfiles, onPress }) {
+  const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
+  const driver2 = trip.second_driver_id
+    ? allProfiles.find((p) => p.id === trip.second_driver_id)
+    : null;
+
+  const statusColor = STATUS_COLORS[trip.status] || '#6b7585';
+  const pickupDate = trip.scheduled_pickup
+    ? new Date(trip.scheduled_pickup).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : '—';
+
+  return (
+    <TouchableOpacity style={s.row} onPress={onPress}>
+      <View style={[s.cell, { flex: 1 }]}>
+        <View style={[s.statusBadge, { borderColor: statusColor }]}>
+          <Text style={[s.statusText, { color: statusColor }]}>
+            {trip.status.replace('_', ' ').toUpperCase()}
+          </Text>
+        </View>
+      </View>
+      <View style={[s.cell, { flex: 0.8 }]}>
+        <Text style={s.typeText}>
+          {trip.trip_type === 'fly' ? '✈ FLY' : '🚗 DRIVE'}
+        </Text>
+      </View>
+      <View style={[s.cell, { flex: 1.2 }]}>
+        <Text style={s.driverText}>{driver1?.name || '—'}</Text>
+        {driver2 && (
+          <Text style={[s.driverText, { fontSize: 10, color: '#6b7585' }]}>
+            + {driver2.name}
+          </Text>
+        )}
+      </View>
+      <View style={[s.cell, { flex: 1 }]}>
+        <Text style={s.crmText}>{trip.crm_id || '—'}</Text>
+      </View>
+      <View style={[s.cell, { flex: 1.2 }]}>
+        <Text style={s.cityText}>{trip.city}</Text>
+      </View>
+      <View style={[s.cell, { flex: 1 }]}>
+        <Text style={s.pickupText}>{pickupDate}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── CREATE TRIP VIEW ─────────────────────────────────────────────────────────
+function CreateTripView({ drivers, onBack, onCreated }) {
+  const now = new Date();
+  const [form, setForm] = useState({
+    driver_id: drivers[0]?.id || '',
+    second_driver_id: '',
+    designated_driver_id: '',
+    trip_type: 'fly',
+    city: '',
+    crm_id: '',
+    carpage_link: '',
+    scheduled_pickup: now.toISOString().slice(0, 16),
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function set(key, value) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function handleCreate() {
+    if (!form.driver_id || !form.city || !form.crm_id) {
+      setError('Driver, City, and CRM ID are required');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+
+    const payload = {
+      driver_id: form.driver_id,
+      second_driver_id: form.second_driver_id || null,
+      designated_driver_id: form.designated_driver_id || form.driver_id,
+      trip_type: form.trip_type,
+      city: form.city,
+      crm_id: form.crm_id,
+      carpage_link: form.carpage_link || null,
+      scheduled_pickup: form.scheduled_pickup || null,
+      notes: form.notes || null,
+      status: 'pending',
+    };
+
+    const { data, error: err } = await supabase
+      .from('trips')
+      .insert(payload)
+      .select()
+      .single();
+
+    setSaving(false);
+
+    if (err) {
+      setError(err.message);
+      return;
+    }
+
+    onCreated(data);
+  }
+
+  return (
+    <ScrollView style={s.createContainer}>
+      <View style={s.createHeader}>
+        <TouchableOpacity onPress={onBack} style={s.backBtn}>
+          <Text style={s.backText}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={s.createTitle}>Create Trip</Text>
+      </View>
+
+      <View style={s.form}>
+        <View style={s.field}>
+          <Text style={s.label}>Trip Type</Text>
+          <View style={s.segmentControl}>
+            <TouchableOpacity
+              style={[
+                s.segment,
+                form.trip_type === 'fly' && s.segmentActive,
+              ]}
+              onPress={() => set('trip_type', 'fly')}
+            >
+              <Text
+                style={[
+                  s.segmentText,
+                  form.trip_type === 'fly' && s.segmentTextActive,
+                ]}
+              >
+                ✈ Fly
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                s.segment,
+                form.trip_type === 'drive' && s.segmentActive,
+              ]}
+              onPress={() => set('trip_type', 'drive')}
+            >
+              <Text
+                style={[
+                  s.segmentText,
+                  form.trip_type === 'drive' && s.segmentTextActive,
+                ]}
+              >
+                🚗 Drive
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.label}>
+            {form.trip_type === 'drive' ? 'Driver 1 (Chase Car)' : 'Assigned Driver'}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {drivers.map((d) => (
+              <TouchableOpacity
+                key={d.id}
+                style={[s.driverPill, form.driver_id === d.id && s.driverPillActive]}
+                onPress={() => set('driver_id', d.id)}
+              >
+                <Text style={[s.driverPillText, form.driver_id === d.id && s.driverPillTextActive]}>
+                  {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {form.trip_type === 'drive' && (
+          <View style={s.field}>
+            <Text style={s.label}>Driver 2 (Drives Vehicle Back)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[s.driverPill, form.second_driver_id === '' && s.driverPillActive]}
+                onPress={() => set('second_driver_id', '')}
+              >
+                <Text style={[s.driverPillText, form.second_driver_id === '' && s.driverPillTextActive]}>
+                  — None —
+                </Text>
+              </TouchableOpacity>
+              {drivers
+                .filter((d) => d.id !== form.driver_id)
+                .map((d) => (
+                  <TouchableOpacity
+                    key={d.id}
+                    style={[s.driverPill, form.second_driver_id === d.id && s.driverPillActive]}
+                    onPress={() => set('second_driver_id', d.id)}
+                  >
+                    <Text style={[s.driverPillText, form.second_driver_id === d.id && s.driverPillTextActive]}>
+                      {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+          </View>
+        )}
+
+        <View style={s.field}>
+          <Text style={s.label}>City / Pickup Location *</Text>
+          <TextInput
+            style={s.input}
+            placeholder="Columbus, OH"
+            placeholderTextColor="#6b7585"
+            value={form.city}
+            onChangeText={(text) => set('city', text)}
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.label}>CRM ID *</Text>
+          <TextInput
+            style={s.input}
+            placeholder="AB123"
+            placeholderTextColor="#6b7585"
+            value={form.crm_id}
+            onChangeText={(text) => set('crm_id', text)}
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.label}>Scheduled Pickup</Text>
+          <TextInput
+            style={s.input}
+            placeholder="YYYY-MM-DD HH:MM"
+            placeholderTextColor="#6b7585"
+            value={form.scheduled_pickup}
+            onChangeText={(text) => set('scheduled_pickup', text)}
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.label}>Carpage Link</Text>
+          <TextInput
+            style={s.input}
+            placeholder="https://..."
+            placeholderTextColor="#6b7585"
+            value={form.carpage_link}
+            onChangeText={(text) => set('carpage_link', text)}
+            autoCapitalize="none"
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.label}>Notes</Text>
+          <TextInput
+            style={[s.input, { height: 80 }]}
+            placeholder="Flight info, seller contact, etc."
+            placeholderTextColor="#6b7585"
+            value={form.notes}
+            onChangeText={(text) => set('notes', text)}
+            multiline
+          />
+        </View>
+
+        {error ? <Text style={s.errorText}>{error}</Text> : null}
+
+        <TouchableOpacity
+          style={[s.createSubmitBtn, saving && s.disabled]}
+          onPress={handleCreate}
+          disabled={saving}
+        >
+          <Text style={s.createSubmitText}>
+            {saving ? 'Creating...' : 'Create Trip →'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+// ── FINALIZE TRIP MODAL ──────────────────────────────────────────────────────
+function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
+  const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
+  const driver2 = trip.second_driver_id
+    ? allProfiles.find((p) => p.id === trip.second_driver_id)
+    : null;
+
+  const duration =
+    trip.actual_start && trip.actual_end
+      ? ((new Date(trip.actual_end) - new Date(trip.actual_start)) / 3600000).toFixed(1)
+      : '';
+
+  const [form, setForm] = useState({
+    pay: '',
+    pay2: '',
+    hours: duration,
+    miles: String(trip.miles || ''),
+    actual_cost: String(trip.actual_cost || ''),
+    estimated_cost: String(trip.estimated_cost || ''),
+    recon_missed: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function set(key, value) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function handleFinalize() {
+    if (!form.pay) {
+      setError('Driver 1 pay is required');
+      return;
+    }
+    if (driver2 && !form.pay2) {
+      setError('Driver 2 pay is required');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+
+    // Update trip to finalized
+    const { error: tripError } = await supabase
+      .from('trips')
+      .update({
+        status: 'finalized',
+        pay: Number(form.pay),
+        second_driver_pay: driver2 ? Number(form.pay2) : null,
+        hours: Number(form.hours),
+        miles: Number(form.miles),
+        actual_cost: Number(form.actual_cost),
+        estimated_cost: Number(form.estimated_cost),
+        recon_missed: form.recon_missed,
+      })
+      .eq('id', trip.id);
+
+    if (tripError) {
+      setError(tripError.message);
+      setSaving(false);
+      return;
+    }
+
+    // Create entries for each driver
+    const entries = [
+      {
+        driver_id: trip.driver_id,
+        trip_id: trip.id,
+        date: trip.actual_start ? trip.actual_start.split('T')[0] : new Date().toISOString().split('T')[0],
+        pay: Number(form.pay),
+        hours: Number(form.hours),
+        city: trip.city,
+        crm_id: trip.crm_id,
+        miles: Number(form.miles),
+        actual_cost: Number(form.actual_cost),
+        estimated_cost: Number(form.estimated_cost),
+        carpage_link: trip.carpage_link,
+        recon_missed: form.recon_missed,
+      },
+    ];
+
+    if (driver2) {
+      entries.push({
+        driver_id: trip.second_driver_id,
+        trip_id: trip.id,
+        date: trip.actual_start ? trip.actual_start.split('T')[0] : new Date().toISOString().split('T')[0],
+        pay: Number(form.pay2),
+        hours: Number(form.hours),
+        city: trip.city,
+        crm_id: trip.crm_id,
+        miles: Number(form.miles),
+        actual_cost: Number(form.actual_cost),
+        estimated_cost: Number(form.estimated_cost),
+        carpage_link: trip.carpage_link,
+        recon_missed: form.recon_missed,
+      });
+    }
+
+    const { error: entriesError } = await supabase.from('entries').insert(entries);
+
+    setSaving(false);
+
+    if (entriesError) {
+      setError(entriesError.message);
+      return;
+    }
+
+    const updatedTrip = {
+      ...trip,
+      status: 'finalized',
+      pay: Number(form.pay),
+      second_driver_pay: driver2 ? Number(form.pay2) : null,
+      hours: Number(form.hours),
+      miles: Number(form.miles),
+      actual_cost: Number(form.actual_cost),
+      estimated_cost: Number(form.estimated_cost),
+      recon_missed: form.recon_missed,
+    };
+
+    onFinalized(updatedTrip);
+  }
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={s.modalOverlay}>
+        <View style={s.modalContainer}>
+          <Text style={s.modalTitle}>Finalize Trip</Text>
+          <Text style={s.modalSubtitle}>
+            {trip.city} · {trip.crm_id}
+          </Text>
+
+          <ScrollView style={{ maxHeight: 400 }}>
+            <View style={s.modalField}>
+              <Text style={s.modalLabel}>{driver1?.name} Pay ($) *</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="0.00"
+                placeholderTextColor="#6b7585"
+                keyboardType="decimal-pad"
+                value={form.pay}
+                onChangeText={(text) => set('pay', text)}
+              />
+            </View>
+
+            {driver2 && (
+              <View style={s.modalField}>
+                <Text style={s.modalLabel}>{driver2.name} Pay ($) *</Text>
+                <TextInput
+                  style={s.modalInput}
+                  placeholder="0.00"
+                  placeholderTextColor="#6b7585"
+                  keyboardType="decimal-pad"
+                  value={form.pay2}
+                  onChangeText={(text) => set('pay2', text)}
+                />
+              </View>
+            )}
+
+            <View style={s.modalField}>
+              <Text style={s.modalLabel}>Hours Worked</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="0.0"
+                placeholderTextColor="#6b7585"
+                keyboardType="decimal-pad"
+                value={form.hours}
+                onChangeText={(text) => set('hours', text)}
+              />
+            </View>
+
+            <View style={s.modalField}>
+              <Text style={s.modalLabel}>Miles Driven</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="0"
+                placeholderTextColor="#6b7585"
+                keyboardType="decimal-pad"
+                value={form.miles}
+                onChangeText={(text) => set('miles', text)}
+              />
+            </View>
+
+            <View style={s.modalField}>
+              <Text style={s.modalLabel}>Actual Cost ($)</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="0.00"
+                placeholderTextColor="#6b7585"
+                keyboardType="decimal-pad"
+                value={form.actual_cost}
+                onChangeText={(text) => set('actual_cost', text)}
+              />
+            </View>
+
+            <View style={s.modalField}>
+              <Text style={s.modalLabel}>Estimated Cost ($)</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="0.00"
+                placeholderTextColor="#6b7585"
+                keyboardType="decimal-pad"
+                value={form.estimated_cost}
+                onChangeText={(text) => set('estimated_cost', text)}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={s.checkboxRow}
+              onPress={() => set('recon_missed', !form.recon_missed)}
+            >
+              <View
+                style={[s.checkbox, form.recon_missed && s.checkboxChecked]}
+              >
+                {form.recon_missed && <Text style={s.checkmark}>✓</Text>}
+              </View>
+              <Text style={s.checkboxLabel}>Recon was missed on this vehicle</Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+          {error ? <Text style={s.modalError}>{error}</Text> : null}
+
+          <View style={s.modalActions}>
+            <TouchableOpacity style={s.modalBtnCancel} onPress={onClose}>
+              <Text style={s.modalBtnCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.modalBtnSave, saving && s.disabled]}
+              onPress={handleFinalize}
+              disabled={saving}
+            >
+              <Text style={s.modalBtnSaveText}>
+                {saving ? 'Finalizing...' : 'Finalize Trip →'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── STYLES ───────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0d0f12',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    padding: 16,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1d24',
+  },
+  tab: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#1a1d24',
+    borderRadius: 4,
+  },
+  tabActive: {
+    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+    borderColor: '#f5a623',
+  },
+  tabText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#6b7585',
+  },
+  tabTextActive: {
+    color: '#f5a623',
+  },
+  createBtn: {
+    marginLeft: 'auto',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f5a623',
+    borderRadius: 4,
+  },
+  createBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#0d0f12',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1d24',
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    color: '#f5a623',
+  },
+  sectionCount: {
+    fontSize: 11,
+    color: '#6b7585',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1d24',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+  },
+  headerCell: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#6b7585',
+  },
+  row: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1d24',
+  },
+  cell: {
+    justifyContent: 'center',
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 2,
+  },
+  statusText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  typeText: {
+    fontSize: 11,
+    color: '#d4d8df',
+  },
+  driverText: {
+    fontSize: 12,
+    color: '#d4d8df',
+  },
+  crmText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#f5a623',
+  },
+  cityText: {
+    fontSize: 11,
+    color: '#d4d8df',
+  },
+  pickupText: {
+    fontSize: 10,
+    color: '#6b7585',
+  },
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#6b7585',
+  },
+  // Create form styles
+  createContainer: {
+    flex: 1,
+    backgroundColor: '#0d0f12',
+  },
+  createHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1d24',
+  },
+  backBtn: {
+    padding: 8,
+  },
+  backText: {
+    fontSize: 14,
+    color: '#f5a623',
+    fontWeight: '600',
+  },
+  createTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#d4d8df',
+  },
+  form: {
+    padding: 16,
+  },
+  field: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    color: '#6b7585',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  input: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: '#1a1d24',
+    borderRadius: 4,
+    padding: 12,
+    fontSize: 14,
+    color: '#d4d8df',
+  },
+  driverPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#1a1d24',
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  driverPillActive: {
+    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+    borderColor: '#f5a623',
+  },
+  driverPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7585',
+  },
+  driverPillTextActive: {
+    color: '#f5a623',
+  },
+  segmentControl: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#1a1d24',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  segmentActive: {
+    backgroundColor: '#f5a623',
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7585',
+  },
+  segmentTextActive: {
+    color: '#0d0f12',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginBottom: 12,
+  },
+  createSubmitBtn: {
+    backgroundColor: '#f5a623',
+    paddingVertical: 14,
+    borderRadius: 4,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  createSubmitText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0d0f12',
+    letterSpacing: 0.5,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: '#1a1d24',
+    borderRadius: 8,
+    padding: 20,
+    maxWidth: 500,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#d4d8df',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#6b7585',
+    marginBottom: 20,
+  },
+  modalField: {
+    marginBottom: 16,
+  },
+  modalLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    color: '#6b7585',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  modalInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: '#2a2d34',
+    borderRadius: 4,
+    padding: 10,
+    fontSize: 14,
+    color: '#d4d8df',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: '#2a2d34',
+    borderRadius: 2,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#ef4444',
+    borderColor: '#ef4444',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  checkboxLabel: {
+    fontSize: 12,
+    color: '#d4d8df',
+  },
+  modalError: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginTop: 12,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  modalBtnCancel: {
+    flex: 1,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#2a2d34',
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  modalBtnCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7585',
+  },
+  modalBtnSave: {
+    flex: 1,
+    paddingVertical: 12,
+    backgroundColor: '#f5a623',
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  modalBtnSaveText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0d0f12',
+  },
+});
