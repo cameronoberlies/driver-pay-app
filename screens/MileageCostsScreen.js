@@ -125,7 +125,10 @@ export default function MileageCostsScreen() {
 
         return (
           <View key={driver.id} style={s.card}>
-            <Text style={s.cardName}>{driver.name}</Text>
+            <Text style={s.cardName}>
+              {driver.name}
+              {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+            </Text>
             <View style={s.cardRow}>
               <View style={s.cardStat}>
                 <Text style={s.cardStatLabel}>MILES</Text>
@@ -165,6 +168,7 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginTop: 20, marginBottom: 12 },
   card: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, borderLeftColor: '#3b8cf7', padding: 16, marginBottom: 10 },
   cardName: { fontSize: 14, fontWeight: '800', color: '#fff', marginBottom: 12 },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between' },
   cardStat: {},
   cardStatLabel: { fontSize: 9, color: '#555', letterSpacing: 1.5, fontWeight: '700', marginBottom: 2 },

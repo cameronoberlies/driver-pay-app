@@ -87,7 +87,10 @@ export default function AvailabilityScreen() {
 
             return (
               <View key={driver.id} style={s.card}>
-                <Text style={s.driverName}>{driver.name}</Text>
+                <Text style={s.driverName}>
+                  {driver.name}
+                  {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+                </Text>
                 <View style={s.daysRow}>
                   {driverAvail.map(({ day, available }) => (
                     <View key={day} style={[
@@ -125,6 +128,7 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginBottom: 14 },
   card: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, borderLeftColor: '#3b8cf7', padding: 16, marginBottom: 10 },
   driverName: { fontSize: 15, fontWeight: '800', color: '#fff', marginBottom: 12 },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
   daysRow: { flexDirection: 'row', gap: 6 },
   dayChip: { width: 34, height: 34, borderRadius: 4, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#2a2a2a' },
   dayAvail: { backgroundColor: 'rgba(74,232,133,0.15)', borderColor: '#4ae885' },

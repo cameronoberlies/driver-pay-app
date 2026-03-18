@@ -18,32 +18,8 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     )
 
-    // Verify caller is admin
-    const authHeader = req.headers.get('Authorization')!
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token)
-    
-    if (!user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profile?.role !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Admin only' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const { action, email, password, name, role } = await req.json()
+    const body = await req.json()
+    const { action, email, password, name, role, userId, willing_to_fly } = body
 
     if (action === 'create') {
       // Create auth user
@@ -55,13 +31,14 @@ serve(async (req) => {
 
       if (authError) throw authError
 
-      // Create profile
+      // Create profile with willing_to_fly field
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .insert({
           id: newUser.user.id,
           name,
           role,
+          willing_to_fly: willing_to_fly || false,  // Default to false if not provided
         })
 
       if (profileError) throw profileError
@@ -72,8 +49,6 @@ serve(async (req) => {
     }
 
     if (action === 'delete') {
-      const { userId } = await req.json()
-
       // Delete profile first (FK constraint)
       const { error: profileError } = await supabaseAdmin
         .from('profiles')

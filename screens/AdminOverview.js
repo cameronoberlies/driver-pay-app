@@ -70,7 +70,10 @@ function DriverModal({ driver, entries, visible, onClose }) {
         <TouchableOpacity activeOpacity={1} style={s.modalSheet}>
           <View style={s.modalHandle} />
 
-          <Text style={s.modalName}>{driver.name}</Text>
+          <Text style={s.modalName}>
+            {driver.name}
+            {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+          </Text>
           <Text style={s.modalPeriod}>
             {wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} –{' '}
             {wkEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -234,7 +237,10 @@ export default function AdminOverview() {
           return (
             <TouchableOpacity key={driver.id} style={s.card} onPress={() => setSelectedDriver(driver)}>
               <View style={s.cardLeft}>
-                <Text style={s.driverName}>{driver.name}</Text>
+                <Text style={s.driverName}>
+                  {driver.name}
+                  {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+                </Text>
                 <Text style={s.driverMeta}>
                   {wk.length} trips · {weekMiles.toFixed(1)} mi · {monthTrips} this month
                 </Text>
@@ -279,6 +285,7 @@ const s = StyleSheet.create({
   cardLeft: { flex: 1 },
   cardRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   driverName: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
   driverMeta: { fontSize: 11, color: '#555', marginTop: 3 },
   driverPay: { fontSize: 22, fontWeight: '900', color: '#f5a623' },
   chevron: { fontSize: 22, color: '#333', fontWeight: '300' },

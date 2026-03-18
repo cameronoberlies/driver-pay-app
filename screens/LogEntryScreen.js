@@ -18,7 +18,7 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-function PendingRow({ entry, driverName, onComplete }) {
+function PendingRow({ entry, driverName, driverWillingToFly, onComplete }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -55,7 +55,10 @@ function PendingRow({ entry, driverName, onComplete }) {
     <View style={p.card}>
       <TouchableOpacity style={p.cardHeader} onPress={() => setExpanded(x => !x)}>
         <View style={p.cardLeft}>
-          <Text style={p.cardName}>{driverName}</Text>
+          <Text style={p.cardName}>
+            {driverName}
+            {driverWillingToFly && <Text style={p.flyBadge}> (F)</Text>}
+          </Text>
           <Text style={p.cardMeta}>
             {formatDate(entry.date)}
             {entry.city ? `  ·  ${entry.city}` : ''}
@@ -220,6 +223,7 @@ export default function LogEntryScreen() {
               key={e.id}
               entry={e}
               driverName={profiles.find(p => p.id === e.driver_id)?.name ?? 'Unknown'}
+              driverWillingToFly={profiles.find(p => p.id === e.driver_id)?.willing_to_fly ?? false}
               onComplete={handlePendingComplete}
             />
           ))}
@@ -238,7 +242,10 @@ export default function LogEntryScreen() {
             style={[s.pill, form.driver_id === d.id && s.pillActive]}
             onPress={() => set('driver_id', d.id)}
           >
-            <Text style={[s.pillText, form.driver_id === d.id && s.pillTextActive]}>{d.name}</Text>
+            <Text style={[s.pillText, form.driver_id === d.id && s.pillTextActive]}>
+              {d.name}
+              {d.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -321,6 +328,7 @@ const s = StyleSheet.create({
   pillActive: { borderColor: '#f5a623', backgroundColor: 'rgba(245,166,35,0.1)' },
   pillText: { fontSize: 12, color: '#555', fontWeight: '700' },
   pillTextActive: { color: '#f5a623' },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 },
   switchLabel: { fontSize: 11, color: '#555', letterSpacing: 2, fontWeight: '700' },
   saveBtn: { backgroundColor: '#f5a623', padding: 16, alignItems: 'center', marginTop: 24 },
@@ -338,6 +346,7 @@ const p = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 14 },
   cardLeft: { flex: 1 },
   cardName: { fontSize: 14, fontWeight: '800', color: '#fff', marginBottom: 3 },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
   cardMeta: { fontSize: 11, color: '#555' },
   chevron: { fontSize: 12, color: '#f5a623', marginLeft: 10 },
   form: { padding: 14, paddingTop: 0, borderTopWidth: 1, borderTopColor: '#1e1e1e' },

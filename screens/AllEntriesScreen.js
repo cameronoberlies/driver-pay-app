@@ -95,7 +95,10 @@ export default function AllEntriesScreen() {
             style={[s.pill, filterDriver === item.id && s.pillActive]}
             onPress={() => setFilterDriver(item.id)}
           >
-            <Text style={[s.pillText, filterDriver === item.id && s.pillTextActive]}>{item.name}</Text>
+            <Text style={[s.pillText, filterDriver === item.id && s.pillTextActive]}>
+              {item.name}
+              {item.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+            </Text>
           </TouchableOpacity>
         )}
       />
@@ -111,7 +114,10 @@ export default function AllEntriesScreen() {
           return (
             <View style={s.card}>
               <View style={s.cardTop}>
-                <Text style={s.driverName}>{driver?.name ?? '—'}</Text>
+                <Text style={s.driverName}>
+                  {driver?.name ?? '—'}
+                  {driver?.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+                </Text>
                 <Text style={s.pay}>{fmtMoney(e.pay)}</Text>
               </View>
               <View style={s.cardMid}>
@@ -152,6 +158,7 @@ const s = StyleSheet.create({
   card: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, borderLeftColor: '#2a2a2a', padding: 14, marginBottom: 8 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   driverName: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
   pay: { fontSize: 16, fontWeight: '900', color: '#f5a623' },
   cardMid: { flexDirection: 'row', gap: 12, marginBottom: 6 },
   city: { fontSize: 11, color: '#888', fontWeight: '600' },

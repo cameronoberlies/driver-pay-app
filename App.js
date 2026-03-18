@@ -16,6 +16,7 @@ import AllEntriesScreen from "./screens/AllEntriesScreen";
 import MileageCostsScreen from "./screens/MileageCostsScreen";
 import AvailabilityScreen from "./screens/AvailabilityScreen";
 import LiveDriversScreen from "./screens/LiveDriversScreen";
+import DriverAvailabilityScreen from './screens/DriverAvailabilityScreen';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -81,7 +82,7 @@ function DriverTabBar({ active, onSelect }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.tabBar, { paddingBottom: insets.bottom }]}>
-      {["dashboard", "trips"].map((t) => (
+      {["dashboard", "trips", "availability"].map((t) => (
         <TouchableOpacity
           key={t}
           style={[styles.tab, active === t && styles.tabActive]}
@@ -161,9 +162,8 @@ export default function App() {
       setProfile(data);
       setActiveTab(data?.role === "admin" ? "overview" : "dashboard");
       // Register push token for drivers
-      if (data.role === "driver") {
-        registerForPushNotifications(s.user.id);
-      }
+      // Register push token
+      registerForPushNotifications(s.user.id);
     }
   }
 
@@ -264,6 +264,7 @@ export default function App() {
     } else {
       if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips") return <MyTripsScreen key={refreshKey} session={session} />;
+      if (activeTab === 'availability') return <DriverAvailabilityScreen key={refreshKey} session={session} />;
     }
     return null;
   }
