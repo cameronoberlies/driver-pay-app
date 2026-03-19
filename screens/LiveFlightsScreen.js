@@ -130,7 +130,15 @@ function FlightGroup({ status, flights, expanded, onToggle }) {
       </TouchableOpacity>
 
       {expanded && flights.map(flight => (
-        <FlightCard key={flight.id} flight={flight} statusColor={config.color} />
+        <TouchableOpacity
+          key={flight.id}
+          onPress={() => {
+            // TODO: Open flight details modal
+            console.log('Tapped flight:', flight.flight_number);
+          }}
+        >
+          <FlightCard flight={flight} statusColor={config.color} />
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -185,6 +193,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginHorizontal: 16,
     marginBottom: 8,
+    marginTop: 8,
     borderRadius: 8,
     borderLeftWidth: 3,
     borderLeftColor: '#f5a623',
