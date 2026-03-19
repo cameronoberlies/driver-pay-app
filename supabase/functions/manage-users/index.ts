@@ -19,9 +19,33 @@ serve(async (req) => {
     )
 
     const body = await req.json()
-    const { action, email, password, name, role, userId, willing_to_fly } = body
+    const { 
+      action, 
+      email, 
+      password, 
+      name, 
+      role, 
+      userId, 
+      willing_to_fly,
+      // Driver-specific fields (optional, only for drivers)
+      phone_number,
+      date_of_birth,
+      drivers_license_number,
+      drivers_license_photo
+    } = body
 
     if (action === 'create') {
+      // Validate required fields for all users
+      if (!email || !password || !name || !role) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required fields: email, password, name, role' }), 
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        )
+      }
+
       // Create auth user
       const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email,
@@ -31,17 +55,34 @@ serve(async (req) => {
 
       if (authError) throw authError
 
-      // Create profile with willing_to_fly field
+      // Build profile data - start with common fields
+      const profileData: any = {
+        id: newUser.user.id,
+        name,
+        email,
+        role,
+      }
+
+      // If creating a driver, add driver-specific fields
+      // For admin users, these fields will be NULL (allowed by schema)
+      if (role === 'driver') {
+        profileData.phone_number = phone_number || null
+        profileData.date_of_birth = date_of_birth || null
+        profileData.drivers_license_number = drivers_license_number || null
+        profileData.drivers_license_photo = drivers_license_photo || null
+        profileData.willing_to_fly = willing_to_fly || false
+      }
+
+      // Create profile
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
-        .insert({
-          id: newUser.user.id,
-          name,
-          role,
-          willing_to_fly: willing_to_fly || false,  // Default to false if not provided
-        })
+        .insert(profileData)
 
-      if (profileError) throw profileError
+      if (profileError) {
+        // Clean up auth user if profile creation fails
+        await supabaseAdmin.auth.admin.deleteUser(newUser.user.id)
+        throw profileError
+      }
 
       return new Response(JSON.stringify({ success: true, user: newUser.user }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

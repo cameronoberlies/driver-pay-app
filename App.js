@@ -23,6 +23,7 @@ import { GeofenceManager } from './lib/GeofenceManager';
 import { useUpdateChecker } from './lib/AndroidUpdateChecker';
 import * as Updates from 'expo-updates';
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
+import LiveFlightsScreen from "./screens/LiveFlightsScreen";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -40,8 +41,10 @@ const ADMIN_TABS = [
   { id: "availability", label: "Availability" },
   { id: "live", label: "Live Drivers" },
   { id: "trips", label: "Trips" },
+  { id: "flights", label: "Live Flights" },
   { id: "tracking", label: "Tracking Health" },
   { id: "geofence", label: "Geofence Activity" },
+
 ];
 
 function AdminNav({ active, onSelect, onSignOut }) {
@@ -314,6 +317,7 @@ export default function App() {
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
       if (activeTab === "tracking") return <AdminTrackingHealthScreen key={refreshKey} />;
       if (activeTab === "geofence") return <GeofenceActivityScreen key={refreshKey} />;
+      if (activeTab === "flights") return <LiveFlightsScreen key={refreshKey} />;
     } else {
       if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips") return <MyTripsScreen key={refreshKey} session={session} />;
