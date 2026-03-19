@@ -20,6 +20,9 @@ import DriverAvailabilityScreen from './screens/DriverAvailabilityScreen';
 import AdminTripsScreen from "./screens/AdminTripsScreen";
 import AdminTrackingHealthScreen from "./screens/AdminTrackingHealthScreen";
 import { GeofenceManager } from './lib/GeofenceManager';
+import { useUpdateChecker } from './lib/AndroidUpdateChecker';
+import * as Updates from 'expo-updates';
+import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -38,6 +41,7 @@ const ADMIN_TABS = [
   { id: "live", label: "Live Drivers" },
   { id: "trips", label: "Trips" },
   { id: "tracking", label: "Tracking Health" },
+  { id: "geofence", label: "Geofence Activity" },
 ];
 
 function AdminNav({ active, onSelect, onSignOut }) {
@@ -143,12 +147,14 @@ async function registerForPushNotifications(userId) {
 }
 
 export default function App() {
+  const { updateAvailable } = useUpdateChecker();
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const appState = useRef(AppState.currentState);
   const notificationListener = useRef();
   const responseListener = useRef();
@@ -171,6 +177,25 @@ export default function App() {
       registerForPushNotifications(s.user.id);
     }
   }
+
+  // Check for OTA updates before anything else
+  useEffect(() => {
+    async function checkForUpdates() {
+      if (__DEV__) return;
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          setIsUpdating(true);
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (e) {
+        console.log('Update check failed:', e);
+        setIsUpdating(false);
+      }
+    }
+    checkForUpdates();
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -265,10 +290,11 @@ export default function App() {
     setRefreshKey((k) => k + 1);
   }
 
-  if (loading)
+  if (loading || isUpdating)
     return (
       <View style={styles.loader}>
         <ActivityIndicator color="#f5a623" size="large" />
+        {isUpdating && <Text style={{ color: '#888', marginTop: 12 }}>Loading update...</Text>}
       </View>
     );
 
@@ -287,6 +313,7 @@ export default function App() {
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
       if (activeTab === "tracking") return <AdminTrackingHealthScreen key={refreshKey} />;
+      if (activeTab === "geofence") return <GeofenceActivityScreen key={refreshKey} />;
     } else {
       if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips") return <MyTripsScreen key={refreshKey} session={session} />;
