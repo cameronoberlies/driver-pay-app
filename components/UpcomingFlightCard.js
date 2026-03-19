@@ -10,11 +10,15 @@ function formatTime(timeString) {
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   }
   const [h, m] = timeString.split(':').map(Number);
+  console.log('[formatTime] parsed h:', h, 'm:', m, 'isNaN:', isNaN(h), isNaN(m));
   if (!isNaN(h) && !isNaN(m)) {
     const period = h >= 12 ? 'PM' : 'AM';
     const hour12 = h % 12 || 12;
-    return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+    const result = `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+    console.log('[formatTime] output:', result);
+    return result;
   }
+  console.log('[formatTime] fallthrough, returning raw:', timeString);
   return timeString;
 }
 
