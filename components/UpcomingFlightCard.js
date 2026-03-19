@@ -2,6 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { flightAPI } from '../lib/flightAPI';
 
+function formatTime(timeString) {
+  if (!timeString) return 'TBD';
+  if (timeString.includes('T')) {
+    const date = new Date(timeString);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+  const [h, m] = timeString.split(':').map(Number);
+  if (!isNaN(h) && !isNaN(m)) {
+    const period = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 || 12;
+    return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+  }
+  return timeString;
+}
+
 function formatDate(dateString) {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -45,7 +60,7 @@ export default function UpcomingFlightCard({ driverName }) {
             {flight.flight_number} | {flight.departure_airport} → {flight.arrival_airport}
           </Text>
           <Text style={styles.flightTime}>
-            {formatDate(flight.scheduled_date)} • {flight.departure_time} Departure
+            {formatDate(flight.scheduled_date)} • {formatTime(flight.departure_time)} Departure
           </Text>
           <Text style={styles.flightStatus}>
             Status: {flight.status}
