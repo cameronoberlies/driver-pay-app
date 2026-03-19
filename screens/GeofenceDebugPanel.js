@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { GeofenceManager } from '../lib/geofenceManager';
+import { GeofenceManager } from '../lib/GeofenceManager';
 import * as Notifications from 'expo-notifications';
  
 function GeofenceDebugPanel() {

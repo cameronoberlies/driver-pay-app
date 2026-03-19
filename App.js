@@ -19,7 +19,7 @@ import LiveDriversScreen from "./screens/LiveDriversScreen";
 import DriverAvailabilityScreen from './screens/DriverAvailabilityScreen';
 import AdminTripsScreen from "./screens/AdminTripsScreen";
 import AdminTrackingHealthScreen from "./screens/AdminTrackingHealthScreen";
-import { GeofenceManager } from './lib/geofenceManager';
+import { GeofenceManager } from './lib/GeofenceManager';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { getWeekBounds, getMonthBounds, withTimeout } from '../lib/utils';
-import { GeofenceManager } from '../lib/geofenceManager';
+import { GeofenceManager } from '../lib/GeofenceManager';
 import GeofenceDebugPanel from './GeofenceDebugPanel';
 
 const TIMEOUT_MS = 8000;
