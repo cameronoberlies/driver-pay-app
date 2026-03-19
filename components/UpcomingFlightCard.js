@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { flightAPI } from '../lib/flightAPI';
 
 function formatTime(timeString) {
+  console.log('[formatTime] input:', JSON.stringify(timeString));
   if (!timeString) return 'TBD';
   if (timeString.includes('T')) {
     const date = new Date(timeString);
