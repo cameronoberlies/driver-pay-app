@@ -32,6 +32,12 @@ export default function FlightDetailsModal({ visible, flight, onClose }) {
         hour12: true,
       });
     }
+    const [h, m] = timeString.split(":").map(Number);
+    if (!isNaN(h) && !isNaN(m)) {
+      const period = h >= 12 ? "PM" : "AM";
+      const hour12 = h % 12 || 12;
+      return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
+    }
     return timeString;
   }
 
