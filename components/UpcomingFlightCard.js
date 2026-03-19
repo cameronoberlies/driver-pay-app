@@ -2,6 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { flightAPI } from '../lib/flightAPI';
 
+function formatDate(dateString) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export default function UpcomingFlightCard({ driverName }) {
   const [flights, setFlights] = useState([]);
   const [loading, setLoading] = useState(true);

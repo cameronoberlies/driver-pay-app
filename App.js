@@ -1,9 +1,18 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Modal, AppState, Platform
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Modal,
+  AppState,
+  Platform,
 } from "react-native";
-import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { supabase } from "./lib/supabase";
@@ -16,12 +25,12 @@ import AllEntriesScreen from "./screens/AllEntriesScreen";
 import MileageCostsScreen from "./screens/MileageCostsScreen";
 import AvailabilityScreen from "./screens/AvailabilityScreen";
 import LiveDriversScreen from "./screens/LiveDriversScreen";
-import DriverAvailabilityScreen from './screens/DriverAvailabilityScreen';
+import DriverAvailabilityScreen from "./screens/DriverAvailabilityScreen";
 import AdminTripsScreen from "./screens/AdminTripsScreen";
 import AdminTrackingHealthScreen from "./screens/AdminTrackingHealthScreen";
-import { GeofenceManager } from './lib/GeofenceManager';
-import { useUpdateChecker } from './lib/AndroidUpdateChecker';
-import * as Updates from 'expo-updates';
+import { GeofenceManager } from "./lib/GeofenceManager";
+import { useUpdateChecker } from "./lib/AndroidUpdateChecker";
+import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
 
@@ -44,7 +53,6 @@ const ADMIN_TABS = [
   { id: "flights", label: "Live Flights" },
   { id: "tracking", label: "Tracking Health" },
   { id: "geofence", label: "Geofence Activity" },
-
 ];
 
 function AdminNav({ active, onSelect, onSignOut }) {
@@ -59,7 +67,10 @@ function AdminNav({ active, onSelect, onSignOut }) {
           <TouchableOpacity onPress={onSignOut} style={styles.signOutBtn}>
             <Text style={styles.signOutText}>SIGN OUT</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setOpen(true)} style={styles.hamburger}>
+          <TouchableOpacity
+            onPress={() => setOpen(true)}
+            style={styles.hamburger}
+          >
             <View style={styles.line} />
             <View style={styles.line} />
             <View style={styles.line} />
@@ -67,17 +78,37 @@ function AdminNav({ active, onSelect, onSignOut }) {
         </View>
       </View>
 
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOpen(false)}>
+      <Modal
+        visible={open}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.overlay}
+          activeOpacity={1}
+          onPress={() => setOpen(false)}
+        >
           <View style={styles.drawer}>
             <Text style={styles.drawerHeading}>MENU</Text>
             {ADMIN_TABS.map((t) => (
               <TouchableOpacity
                 key={t.id}
-                style={[styles.drawerRow, active === t.id && styles.drawerRowActive]}
-                onPress={() => { onSelect(t.id); setOpen(false); }}
+                style={[
+                  styles.drawerRow,
+                  active === t.id && styles.drawerRowActive,
+                ]}
+                onPress={() => {
+                  onSelect(t.id);
+                  setOpen(false);
+                }}
               >
-                <Text style={[styles.drawerLabel, active === t.id && styles.drawerLabelActive]}>
+                <Text
+                  style={[
+                    styles.drawerLabel,
+                    active === t.id && styles.drawerLabelActive,
+                  ]}
+                >
                   {t.label}
                 </Text>
                 {active === t.id && <View style={styles.dot} />}
@@ -91,7 +122,7 @@ function AdminNav({ active, onSelect, onSignOut }) {
 }
 
 function DriverTabBar({ active, onSelect }) {
-  const bottomInset = Platform.OS === 'android' ? 48 : 0;
+  const bottomInset = Platform.OS === "android" ? 48 : 0;
   return (
     <View style={[styles.tabBar, { paddingBottom: bottomInset }]}>
       {["dashboard", "trips", "availability"].map((t) => (
@@ -110,10 +141,13 @@ function DriverTabBar({ active, onSelect }) {
 }
 
 async function registerForPushNotifications(userId) {
-  if (!Device.isDevice) { console.log('Push: skipped - not a device'); return; }
+  if (!Device.isDevice) {
+    console.log("Push: skipped - not a device");
+    return;
+  }
 
   const { status: existing } = await Notifications.getPermissionsAsync();
-  console.log('Push: existing permission status:', existing);
+  console.log("Push: existing permission status:", existing);
   let finalStatus = existing;
 
   if (existing !== "granted") {
@@ -121,20 +155,23 @@ async function registerForPushNotifications(userId) {
     finalStatus = status;
   }
 
-  if (finalStatus !== "granted") { console.log('Push: permission not granted'); return; }
+  if (finalStatus !== "granted") {
+    console.log("Push: permission not granted");
+    return;
+  }
 
   try {
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: "2fa6ed9e-334f-4d4e-83f4-753b40bf843b",
     });
-    console.log('Push: token obtained:', tokenData.data);
+    console.log("Push: token obtained:", tokenData.data);
     const token = tokenData.data;
 
     const { error } = await supabase
       .from("profiles")
       .update({ push_token: token })
       .eq("id", userId);
-    console.log('Push: saved to Supabase, error:', error);
+    console.log("Push: saved to Supabase, error:", error);
 
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("default", {
@@ -144,8 +181,7 @@ async function registerForPushNotifications(userId) {
       });
     }
   } catch (e) {
-    console.log('Push: error getting token:', e.message);
-    
+    console.log("Push: error getting token:", e.message);
   }
 }
 
@@ -193,7 +229,7 @@ export default function App() {
           await Updates.reloadAsync();
         }
       } catch (e) {
-        console.log('Update check failed:', e);
+        console.log("Update check failed:", e);
         setIsUpdating(false);
       }
     }
@@ -212,7 +248,9 @@ export default function App() {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "INITIAL_SESSION") return;
       setSession(session);
       if (session) {
@@ -223,54 +261,68 @@ export default function App() {
       }
     });
 
-    const appStateSubscription = AppState.addEventListener("change", async (nextAppState) => {
-      if (appState.current.match(/inactive|background/) && nextAppState === "active") {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        if (currentSession) {
-          setIsRefreshing(true);
-          try {
-            const { data } = await supabase.auth.refreshSession();
-            if (data?.session) setSession(data.session);
-          } finally {
-            setIsRefreshing(false);
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      async (nextAppState) => {
+        if (
+          appState.current.match(/inactive|background/) &&
+          nextAppState === "active"
+        ) {
+          const {
+            data: { session: currentSession },
+          } = await supabase.auth.getSession();
+          if (currentSession) {
+            setIsRefreshing(true);
+            try {
+              const { data } = await supabase.auth.refreshSession();
+              if (data?.session) setSession(data.session);
+            } finally {
+              setIsRefreshing(false);
+            }
           }
+          setRefreshKey((k) => k + 1);
         }
-        setRefreshKey((k) => k + 1);
-      }
-      appState.current = nextAppState;
-    });
+        appState.current = nextAppState;
+      },
+    );
 
     // Notification listeners
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log("Notification received:", notification);
-    });
+    notificationListener.current =
+      Notifications.addNotificationReceivedListener((notification) => {
+        console.log("Notification received:", notification);
+      });
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {
-      // Handle geofence prompts or any driver notification — navigate to trips
-      if (profile?.role === "driver") {
-        setActiveTab("trips");
-        setRefreshKey((k) => k + 1);
-      }
-    });
+    responseListener.current =
+      Notifications.addNotificationResponseReceivedListener(() => {
+        // Handle geofence prompts or any driver notification — navigate to trips
+        if (profile?.role === "driver") {
+          setActiveTab("trips");
+          setRefreshKey((k) => k + 1);
+        }
+      });
 
     return () => {
       subscription.unsubscribe();
       appStateSubscription.remove();
-      Notifications.removeNotificationSubscription(notificationListener.current);
-      Notifications.removeNotificationSubscription(responseListener.current);
+      if (notificationListener.current) {
+        notificationListener.current.remove();
+      }
+      if (responseListener.current) {
+        responseListener.current.remove();
+      }
     };
   }, []);
 
   // Start/stop geofence monitoring based on profile role
   useEffect(() => {
-    if (profile?.role === 'driver') {
+    if (profile?.role === "driver") {
       GeofenceManager.start().then(() => {
         setTimeout(async () => {
           const isActive = await GeofenceManager.isActive();
-          console.log('🔍 Geofence registered:', isActive);
+          console.log("🔍 Geofence registered:", isActive);
 
           const distance = await GeofenceManager.getDistanceFromGeofence();
-          console.log('🔍 Distance from home:', distance);
+          console.log("🔍 Distance from home:", distance);
         }, 3000);
       });
     }
@@ -281,7 +333,10 @@ export default function App() {
 
   async function handleSignOut() {
     try {
-      await supabase.from("driver_locations").delete().eq("driver_id", session.user.id);
+      await supabase
+        .from("driver_locations")
+        .delete()
+        .eq("driver_id", session.user.id);
       await GeofenceManager.stop();
     } finally {
       await supabase.auth.signOut();
@@ -297,7 +352,11 @@ export default function App() {
     return (
       <View style={styles.loader}>
         <ActivityIndicator color="#f5a623" size="large" />
-        {isUpdating && <Text style={{ color: '#888', marginTop: 12 }}>Loading update...</Text>}
+        {isUpdating && (
+          <Text style={{ color: "#888", marginTop: 12 }}>
+            Loading update...
+          </Text>
+        )}
       </View>
     );
 
@@ -306,22 +365,35 @@ export default function App() {
   const isAdmin = profile?.role === "admin";
 
   function renderScreen() {
-    if (isRefreshing) return <View style={styles.loader}><ActivityIndicator color="#f5a623" size="large" /></View>;
+    if (isRefreshing)
+      return (
+        <View style={styles.loader}>
+          <ActivityIndicator color="#f5a623" size="large" />
+        </View>
+      );
     if (isAdmin) {
       if (activeTab === "overview") return <AdminOverview key={refreshKey} />;
       if (activeTab === "log") return <LogEntryScreen key={refreshKey} />;
       if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} />;
-      if (activeTab === "mileage") return <MileageCostsScreen key={refreshKey} />;
-      if (activeTab === "availability") return <AvailabilityScreen key={refreshKey} />;
+      if (activeTab === "mileage")
+        return <MileageCostsScreen key={refreshKey} />;
+      if (activeTab === "availability")
+        return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
-      if (activeTab === "tracking") return <AdminTrackingHealthScreen key={refreshKey} />;
-      if (activeTab === "geofence") return <GeofenceActivityScreen key={refreshKey} />;
-      if (activeTab === "flights") return <LiveFlightsScreen key={refreshKey} />;
+      if (activeTab === "tracking")
+        return <AdminTrackingHealthScreen key={refreshKey} />;
+      if (activeTab === "geofence")
+        return <GeofenceActivityScreen key={refreshKey} />;
+      if (activeTab === "flights")
+        return <LiveFlightsScreen key={refreshKey} />;
     } else {
-      if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
-      if (activeTab === "trips") return <MyTripsScreen key={refreshKey} session={session} />;
-      if (activeTab === 'availability') return <DriverAvailabilityScreen key={refreshKey} session={session} />;
+      if (activeTab === "dashboard")
+        return <DriverDashboard key={refreshKey} session={session} />;
+      if (activeTab === "trips")
+        return <MyTripsScreen key={refreshKey} session={session} />;
+      if (activeTab === "availability")
+        return <DriverAvailabilityScreen key={refreshKey} session={session} />;
     }
     return null;
   }
@@ -330,7 +402,11 @@ export default function App() {
     return (
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <View style={styles.app}>
-          <AdminNav active={activeTab} onSelect={handleTabSelect} onSignOut={handleSignOut} />
+          <AdminNav
+            active={activeTab}
+            onSelect={handleTabSelect}
+            onSignOut={handleSignOut}
+          />
           <View style={styles.screen}>{renderScreen()}</View>
         </View>
       </SafeAreaProvider>
@@ -348,35 +424,84 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loader: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center" },
+  loader: {
+    flex: 1,
+    backgroundColor: "#0a0a0a",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   app: { flex: 1, backgroundColor: "#0a0a0a" },
   screen: { flex: 1 },
   adminBar: {
-    paddingTop: 60, paddingBottom: 14, paddingHorizontal: 20,
-    backgroundColor: "#0a0a0a", borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingTop: 60,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
+    backgroundColor: "#0a0a0a",
+    borderBottomWidth: 1,
+    borderBottomColor: "#1a1a1a",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  adminBarTitle: { fontSize: 16, fontWeight: "900", color: "#fff", letterSpacing: 2 },
+  adminBarTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#fff",
+    letterSpacing: 2,
+  },
   adminBarRight: { flexDirection: "row", alignItems: "center", gap: 14 },
-  signOutBtn: { borderWidth: 1, borderColor: "#2a2a2a", paddingHorizontal: 10, paddingVertical: 5 },
-  signOutText: { fontSize: 9, color: "#555", letterSpacing: 1.5, fontWeight: "700" },
+  signOutBtn: {
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  signOutText: {
+    fontSize: 9,
+    color: "#555",
+    letterSpacing: 1.5,
+    fontWeight: "700",
+  },
   hamburger: { gap: 5, padding: 4 },
   line: { width: 22, height: 2, backgroundColor: "#f5a623" },
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
-  drawer: {
-    backgroundColor: "#111", borderTopWidth: 1, borderTopColor: "#222",
-    paddingTop: 28, paddingBottom: 52, paddingHorizontal: 28,
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "flex-end",
   },
-  drawerHeading: { fontSize: 10, color: "#444", letterSpacing: 3, fontWeight: "700", marginBottom: 16 },
+  drawer: {
+    backgroundColor: "#111",
+    borderTopWidth: 1,
+    borderTopColor: "#222",
+    paddingTop: 28,
+    paddingBottom: 52,
+    paddingHorizontal: 28,
+  },
+  drawerHeading: {
+    fontSize: 10,
+    color: "#444",
+    letterSpacing: 3,
+    fontWeight: "700",
+    marginBottom: 16,
+  },
   drawerRow: {
-    paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: "#1a1a1a",
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: "#1a1a1a",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   drawerRowActive: {},
   drawerLabel: { fontSize: 20, fontWeight: "700", color: "#555" },
   drawerLabelActive: { color: "#f5a623" },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#f5a623" },
-  tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#1a1a1a", backgroundColor: "#0a0a0a" },
+  tabBar: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "#1a1a1a",
+    backgroundColor: "#0a0a0a",
+  },
   tab: { flex: 1, paddingVertical: 16, alignItems: "center" },
   tabActive: { borderTopWidth: 2, borderTopColor: "#f5a623" },
   tabText: { fontSize: 11, color: "#444", letterSpacing: 2, fontWeight: "700" },
