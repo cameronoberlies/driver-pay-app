@@ -13,6 +13,9 @@ const TIMEOUT_MS = 8000;
 
 // ── Background task definition (must be at module level) ─────────────────────
 // This task runs natively even when iOS kills the JS runtime
+// PROPER FIX FOR BACKGROUND TRACKING TOKEN EXPIRATION
+// Replace your existing LOCATION_TASK definition in MyTripsScreen.js
+
 TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   if (error || !data) return;
   const { locations } = data;
@@ -26,13 +29,54 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     if (!stored) return;
     const { tripId, userId, lastLat, lastLon, miles, startTime } = JSON.parse(stored);
 
-    // Get session token from AsyncStorage
-    const sessionStr = await AsyncStorage.getItem('supabase.auth.token');
-    const session = sessionStr ? JSON.parse(sessionStr) : null;
-    const accessToken = session?.currentSession?.access_token;
-    if (!accessToken) return;
+    // FIX: Get session from Supabase v2 storage key
+    const STORAGE_KEY = 'sb-yincjogkjvotupzgetqg-auth-token';
+    const sessionStr = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!sessionStr) {
+      console.log('[BG Task] No session in storage');
+      return;
+    }
 
-    // Create fresh authenticated client
+    const sessionData = JSON.parse(sessionStr);
+    let accessToken = sessionData?.access_token;
+    const refreshToken = sessionData?.refresh_token;
+
+    // Check if token is expired or about to expire
+    const expiresAt = sessionData?.expires_at;
+    const now = Math.floor(Date.now() / 1000);
+    const isExpired = expiresAt && now >= expiresAt;
+    const expiringSoon = expiresAt && (expiresAt - now) < 300; // Less than 5 minutes left
+
+    // Refresh token if expired or expiring soon
+    if ((isExpired || expiringSoon) && refreshToken) {
+      console.log('[BG Task] Token expired/expiring, refreshing...');
+
+      const tempClient = createClient(
+        process.env.EXPO_PUBLIC_SUPABASE_URL,
+        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+      );
+
+      const { data: refreshData, error: refreshError } = await tempClient.auth.refreshSession({
+        refresh_token: refreshToken
+      });
+
+      if (refreshError || !refreshData.session) {
+        console.log('[BG Task] Token refresh failed:', refreshError?.message);
+        return;
+      }
+
+      // Write back the refreshed session in the same format Supabase v2 expects
+      accessToken = refreshData.session.access_token;
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(refreshData.session));
+      console.log('[BG Task] Token refreshed successfully');
+    }
+
+    if (!accessToken) {
+      console.log('[BG Task] No access token available');
+      return;
+    }
+
+    // Create authenticated client with fresh token
     const client = createClient(
       process.env.EXPO_PUBLIC_SUPABASE_URL,
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
@@ -44,16 +88,33 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
 
     let newMiles = miles;
     if (lastLat && lastLon) {
-      newMiles += getDistanceMiles(lastLat, lastLon, latitude, longitude);
+      // Calculate distance using Haversine formula
+      const R = 3958.8; // Earth radius in miles
+      const dLat = (latitude - lastLat) * Math.PI / 180;
+      const dLon = (longitude - lastLon) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lastLat * Math.PI / 180) * Math.cos(latitude * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = R * c;
+      newMiles += distance;
     }
 
-    await client.from('driver_locations').upsert({
+    // Write to database
+    const { error: dbError } = await client.from('driver_locations').upsert({
       driver_id: userId,
       latitude,
       longitude,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'driver_id' });
 
+    if (dbError) {
+      console.log('[BG Task] DB write error:', dbError.message);
+    } else {
+      console.log('[BG Task] Location updated successfully');
+    }
+
+    // Update AsyncStorage
     await AsyncStorage.setItem('activeTrip', JSON.stringify({
       tripId, userId,
       lastLat: latitude,
@@ -61,8 +122,9 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
       miles: newMiles,
       startTime,
     }));
+
   } catch (e) {
-    console.log('Background task error:', e);
+    console.log('[BG Task] Error:', e.message);
   }
 });
 
@@ -313,12 +375,37 @@ export default function MyTripsScreen({ session }) {
     locationWatcherRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 10 },
       async (loc) => {
+        const { latitude, longitude } = loc.coords;
+
+        // Push live location to DB for admin Live Drivers view
         await supabase.from('driver_locations').upsert({
           driver_id: session.user.id,
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
+          latitude,
+          longitude,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'driver_id' });
+
+        // Accumulate miles in AsyncStorage (same logic as background task)
+        try {
+          const stored = await AsyncStorage.getItem('activeTrip');
+          if (!stored) return;
+          const tripData = JSON.parse(stored);
+          let newMiles = tripData.miles || 0;
+
+          if (tripData.lastLat && tripData.lastLon) {
+            newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+          }
+
+          await AsyncStorage.setItem('activeTrip', JSON.stringify({
+            ...tripData,
+            lastLat: latitude,
+            lastLon: longitude,
+            miles: newMiles,
+          }));
+
+          // Update UI with new miles
+          setActiveTrip(prev => prev ? { ...prev, miles: newMiles } : prev);
+        } catch {}
       }
     );
 

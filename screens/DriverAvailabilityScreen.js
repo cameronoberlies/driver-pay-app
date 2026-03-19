@@ -121,10 +121,14 @@ export default function DriverAvailabilityScreen({ session }) {
   }
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.content}>
+    <View style={s.container}>
+    <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
       {/* Header */}
-      <Text style={s.heading}>AVAILABILITY</Text>
-      <Text style={s.subheading}>{getNextWeekLabel()}</Text>
+      <View style={{ marginBottom: 32, alignItems: 'center' }}>
+        <Text style={s.heading}>AVAILABILITY</Text>
+        <Text style={s.subheading}>Select the days you're available{'\n'}for trips this week</Text>
+        <Text style={[s.subheading, { marginBottom: 0, fontSize: 11, color: '#555' }]}>{getNextWeekLabel()}</Text>
+      </View>
 
       {/* Already submitted banner */}
       {existingRecord && (
@@ -221,16 +225,17 @@ export default function DriverAvailabilityScreen({ session }) {
         </View>
       )}
     </ScrollView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingTop: 60, paddingBottom: 48 },
+  content: { flex: 1, padding: 20, paddingTop: 80, paddingBottom: 100, justifyContent: 'center' },
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
 
-  heading: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: 3, marginBottom: 4 },
-  subheading: { fontSize: 12, color: '#555', marginBottom: 20 },
+  heading: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: 8, textAlign: 'center' },
+  subheading: { fontSize: 13, color: '#888', marginBottom: 32, textAlign: 'center', lineHeight: 20 },
 
   submittedBanner: {
     backgroundColor: 'rgba(74,232,133,0.08)',
@@ -250,6 +255,7 @@ const s = StyleSheet.create({
   daysContainer: {
     backgroundColor: '#111',
     borderWidth: 1, borderColor: '#1e1e1e',
+    borderRadius: 8,
     marginBottom: 20,
   },
   dayRow: {
@@ -257,7 +263,7 @@ const s = StyleSheet.create({
     padding: 14, minHeight: 56,
   },
   dayLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dayLabel: { fontSize: 15, fontWeight: '600', color: '#444' },
+  dayLabel: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: 0.5 },
   dayLabelActive: { color: '#fff' },
 
   doneByRow: {
@@ -280,11 +286,12 @@ const s = StyleSheet.create({
   },
 
   saveBtn: {
-    backgroundColor: '#f5a623', padding: 16,
-    alignItems: 'center', marginBottom: 16,
+    backgroundColor: '#f5a623', padding: 18,
+    alignItems: 'center', marginTop: 32, marginBottom: 16,
+    borderRadius: 8,
   },
   saveBtnDisabled: { opacity: 0.4 },
-  saveBtnText: { color: '#0a0a0a', fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  saveBtnText: { color: '#0a0a0a', fontWeight: '900', fontSize: 16, letterSpacing: 2 },
 
   successToast: {
     backgroundColor: 'rgba(74,232,133,0.1)',

@@ -5,6 +5,8 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { getWeekBounds, getMonthBounds, withTimeout } from '../lib/utils';
+import { GeofenceManager } from '../lib/geofenceManager';
+import GeofenceDebugPanel from './GeofenceDebugPanel';
 
 const TIMEOUT_MS = 8000;
 
@@ -85,6 +87,8 @@ export default function DriverDashboard({ session }) {
           <Text style={styles.signOutText}>SIGN OUT</Text>
         </TouchableOpacity>
       </View>
+
+      <GeofenceDebugPanel />
 
       <View style={styles.heroCard}>
         <Text style={styles.heroLabel}>THIS WEEK'S EARNINGS</Text>

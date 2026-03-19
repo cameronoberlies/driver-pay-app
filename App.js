@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, Modal, AppState, Platform
 } from "react-native";
-import { SafeAreaProvider, useSafeAreaInsets, initialWindowMetrics } from "react-native-safe-area-context";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { supabase } from "./lib/supabase";
@@ -18,6 +18,8 @@ import AvailabilityScreen from "./screens/AvailabilityScreen";
 import LiveDriversScreen from "./screens/LiveDriversScreen";
 import DriverAvailabilityScreen from './screens/DriverAvailabilityScreen';
 import AdminTripsScreen from "./screens/AdminTripsScreen";
+import AdminTrackingHealthScreen from "./screens/AdminTrackingHealthScreen";
+import { GeofenceManager } from './lib/geofenceManager';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -35,6 +37,7 @@ const ADMIN_TABS = [
   { id: "availability", label: "Availability" },
   { id: "live", label: "Live Drivers" },
   { id: "trips", label: "Trips" },
+  { id: "tracking", label: "Tracking Health" },
 ];
 
 function AdminNav({ active, onSelect, onSignOut }) {
@@ -81,9 +84,9 @@ function AdminNav({ active, onSelect, onSignOut }) {
 }
 
 function DriverTabBar({ active, onSelect }) {
-  const insets = useSafeAreaInsets();
+  const bottomInset = Platform.OS === 'android' ? 48 : 0;
   return (
-    <View style={[styles.tabBar, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.tabBar, { paddingBottom: bottomInset }]}>
       {["dashboard", "trips", "availability"].map((t) => (
         <TouchableOpacity
           key={t}
@@ -214,8 +217,8 @@ export default function App() {
       console.log("Notification received:", notification);
     });
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      // When driver taps notification, navigate to trips tab
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {
+      // Handle geofence prompts or any driver notification — navigate to trips
       if (profile?.role === "driver") {
         setActiveTab("trips");
         setRefreshKey((k) => k + 1);
@@ -230,9 +233,28 @@ export default function App() {
     };
   }, []);
 
+  // Start/stop geofence monitoring based on profile role
+  useEffect(() => {
+    if (profile?.role === 'driver') {
+      GeofenceManager.start().then(() => {
+        setTimeout(async () => {
+          const isActive = await GeofenceManager.isActive();
+          console.log('🔍 Geofence registered:', isActive);
+
+          const distance = await GeofenceManager.getDistanceFromGeofence();
+          console.log('🔍 Distance from home:', distance);
+        }, 3000);
+      });
+    }
+    return () => {
+      GeofenceManager.stop();
+    };
+  }, [profile]);
+
   async function handleSignOut() {
     try {
       await supabase.from("driver_locations").delete().eq("driver_id", session.user.id);
+      await GeofenceManager.stop();
     } finally {
       await supabase.auth.signOut();
     }
@@ -264,6 +286,7 @@ export default function App() {
       if (activeTab === "availability") return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
+      if (activeTab === "tracking") return <AdminTrackingHealthScreen key={refreshKey} />;
     } else {
       if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips") return <MyTripsScreen key={refreshKey} session={session} />;

@@ -1,3 +1,7 @@
+// UPDATED: notify-drivers Edge Function
+// Deploy to: supabase/functions/notify-drivers/index.ts
+// This version ONLY sends 30-min reminders for FLY trips (not DRIVE trips)
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const supabase = createClient(
@@ -23,7 +27,8 @@ Deno.serve(async () => {
   const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
   const sixtyMinutesAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-  // Find trips where pickup was 30-35 minutes ago, still pending, not yet notified
+  // Find FLY trips where pickup was 30-35 minutes ago, still pending, not yet notified
+  // CHANGED: Added .eq("trip_type", "fly") filter
   const { data: trips, error } = await supabase
     .from("trips")
     .select(
@@ -35,6 +40,7 @@ Deno.serve(async () => {
     `,
     )
     .eq("status", "pending")
+    .eq("trip_type", "fly")  // ← NEW: ONLY FLY TRIPS
     .is("notified_at", null)
     .gte("scheduled_pickup", sixtyMinutesAgo.toISOString())
     .lte("scheduled_pickup", thirtyMinutesAgo.toISOString());
@@ -53,8 +59,9 @@ Deno.serve(async () => {
   let notified = 0;
 
   for (const trip of trips) {
-    const title = "Trip Reminder";
-    const body = `Your trip to ${trip.city} was scheduled 30 minutes ago. Please start your trip.`;
+    // CHANGED: Updated message to be flight-specific
+    const title = "Flight Trip Reminder";
+    const body = `Your flight to ${trip.city} was scheduled 30 minutes ago. Ready to start your trip?`;
 
     // Notify primary driver
     const driverToken = (trip.driver as any)?.push_token;
@@ -63,14 +70,8 @@ Deno.serve(async () => {
       notified++;
     }
 
-    // Notify second driver if drive trip
-    if (trip.trip_type === "drive") {
-      const secondToken = (trip.second_driver as any)?.push_token;
-      if (secondToken) {
-        await sendPushNotification(secondToken, title, body);
-        notified++;
-      }
-    }
+    // REMOVED: Second driver notification (flights only have one driver)
+    // Drive trips with second drivers won't get notified anymore (they use geofence instead)
 
     // Mark as notified
     await supabase
