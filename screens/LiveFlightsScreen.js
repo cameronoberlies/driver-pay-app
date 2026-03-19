@@ -171,6 +171,13 @@ function formatTime(timeString) {
     const date = new Date(timeString);
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   }
+  // Convert plain "HH:MM" (24h) to 12h AM/PM
+  const [h, m] = timeString.split(':').map(Number);
+  if (!isNaN(h) && !isNaN(m)) {
+    const period = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 || 12;
+    return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+  }
   return timeString;
 }
 
