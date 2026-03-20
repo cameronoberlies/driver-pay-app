@@ -2,7 +2,7 @@
   "expo": {
     "name": "Discovery Driver Portal",
     "slug": "DriverPayApp2",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,6 +14,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.driverportal.app",
+      "buildNumber": "27",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Used to track your drive and calculate miles.",
@@ -21,7 +22,8 @@
         "NSLocationAlwaysUsageDescription": "Used to track your drive in the background.",
         "UIBackgroundModes": ["fetch", "remote-notification", "location"],
         "NSLocalNetworkUsageDescription": "Required to connect to development server",
-        "NSBonjourServices": ["_expo._tcp", "_expo._tcp"]
+        "NSBonjourServices": ["_expo._tcp", "_expo._tcp"],
+        "UIDeviceFamily": [1]
       },
       "backgroundModes": ["location"]
     },
