@@ -11,6 +11,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { getWeekBounds, getMonthBounds, withTimeout } from "../lib/utils";
 import UpcomingFlightCard from "../components/UpcomingFlightCard";
+import DriverPhoneBookModal from '../components/DriverPhoneBookModal';
 
 const TIMEOUT_MS = 8000;
 
@@ -20,6 +21,7 @@ export default function DriverDashboard({ session }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
+  const [phoneBookVisible, setPhoneBookVisible] = useState(false);
 
   const fetchData = async () => {
     setError(false);
@@ -111,94 +113,111 @@ export default function DriverDashboard({ session }) {
     );
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor="#f5a623"
-        />
-      }
-    >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>
-            Hey, {profile?.name?.split(" ")[0]}.
-          </Text>
-          <Text style={styles.period}>
-            PAY PERIOD:{" "}
-            {wStart.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })}{" "}
-            –{" "}
-            {wEnd.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
-          <Text style={styles.signOutText}>SIGN OUT</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>THIS WEEK'S EARNINGS</Text>
-        <Text style={styles.heroValue}>${weekPay.toFixed(2)}</Text>
-        <View style={styles.heroRow}>
-          <Text style={styles.heroStat}>{weekEntries.length} trips</Text>
-          <Text style={styles.heroDot}>·</Text>
-          <Text style={styles.heroStat}>{weekHours}h worked</Text>
-          <Text style={styles.heroDot}>·</Text>
-          <Text style={styles.heroStat}>{weekMiles.toFixed(0)} mi</Text>
-        </View>
-      </View>
-
-      <UpcomingFlightCard driverName={profile?.name} />
-
-      <Text style={styles.sectionLabel}>BONUS PROGRESS</Text>
-      <View style={styles.bonusRow}>
-        <View style={[styles.bonusCard, tripBonus && styles.bonusEarned]}>
-          <Text style={styles.bonusTitle}>TRIP BONUS</Text>
-          <Text style={styles.bonusAmount}>$50</Text>
-          <Text style={styles.bonusDesc}>
-            {monthTrips} / 20 trips this month
-          </Text>
-          {tripBonus && <Text style={styles.bonusTag}>✓ EARNED</Text>}
-        </View>
-        <View style={[styles.bonusCard, reconBonus && styles.bonusEarned]}>
-          <Text style={styles.bonusTitle}>RECON STREAK</Text>
-          <Text style={styles.bonusAmount}>$50</Text>
-          <Text style={styles.bonusDesc}>{reconStreak} / 25 consecutive</Text>
-          {reconBonus && <Text style={styles.bonusTag}>✓ EARNED</Text>}
-        </View>
-      </View>
-
-      <Text style={styles.sectionLabel}>RECENT TRIPS</Text>
-      {entries.slice(0, 10).map((entry) => (
-        <View key={entry.id} style={styles.tripRow}>
-          <View style={styles.tripLeft}>
-            <Text style={styles.tripCity}>{entry.city}</Text>
-            <Text style={styles.tripMeta}>
-              {new Date(entry.date).toLocaleDateString("en-US", {
+    <>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#f5a623"
+          />
+        }
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>
+              Hey, {profile?.name?.split(" ")[0]}.
+            </Text>
+            <Text style={styles.period}>
+              PAY PERIOD:{" "}
+              {wStart.toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
+              })}{" "}
+              –{" "}
+              {wEnd.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
               })}
-              {entry.miles ? `  ·  ${entry.miles} mi` : ""}
-              {entry.hours ? `  ·  ${entry.hours}h` : ""}
             </Text>
           </View>
-          <View style={styles.tripRight}>
-            <Text style={styles.tripPay}>${Number(entry.pay).toFixed(2)}</Text>
-            {entry.recon_missed && <Text style={styles.missedTag}>MISSED</Text>}
+
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              onPress={() => setPhoneBookVisible(true)}
+              style={styles.phoneBtn}
+            >
+              <Text style={styles.phoneIcon}>📞</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
+              <Text style={styles.signOutText}>SIGN OUT</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      ))}
-    </ScrollView>
+
+        <View style={styles.heroCard}>
+          <Text style={styles.heroLabel}>THIS WEEK'S EARNINGS</Text>
+          <Text style={styles.heroValue}>${weekPay.toFixed(2)}</Text>
+          <View style={styles.heroRow}>
+            <Text style={styles.heroStat}>{weekEntries.length} trips</Text>
+            <Text style={styles.heroDot}>·</Text>
+            <Text style={styles.heroStat}>{weekHours}h worked</Text>
+            <Text style={styles.heroDot}>·</Text>
+            <Text style={styles.heroStat}>{weekMiles.toFixed(0)} mi</Text>
+          </View>
+        </View>
+
+        <UpcomingFlightCard driverName={profile?.name} />
+
+        <Text style={styles.sectionLabel}>BONUS PROGRESS</Text>
+        <View style={styles.bonusRow}>
+          <View style={[styles.bonusCard, tripBonus && styles.bonusEarned]}>
+            <Text style={styles.bonusTitle}>TRIP BONUS</Text>
+            <Text style={styles.bonusAmount}>$50</Text>
+            <Text style={styles.bonusDesc}>
+              {monthTrips} / 20 trips this month
+            </Text>
+            {tripBonus && <Text style={styles.bonusTag}>✓ EARNED</Text>}
+          </View>
+          <View style={[styles.bonusCard, reconBonus && styles.bonusEarned]}>
+            <Text style={styles.bonusTitle}>RECON STREAK</Text>
+            <Text style={styles.bonusAmount}>$50</Text>
+            <Text style={styles.bonusDesc}>{reconStreak} / 25 consecutive</Text>
+            {reconBonus && <Text style={styles.bonusTag}>✓ EARNED</Text>}
+          </View>
+        </View>
+
+        <Text style={styles.sectionLabel}>RECENT TRIPS</Text>
+        {entries.slice(0, 10).map((entry) => (
+          <View key={entry.id} style={styles.tripRow}>
+            <View style={styles.tripLeft}>
+              <Text style={styles.tripCity}>{entry.city}</Text>
+              <Text style={styles.tripMeta}>
+                {new Date(entry.date).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                })}
+                {entry.miles ? `  ·  ${entry.miles} mi` : ""}
+                {entry.hours ? `  ·  ${entry.hours}h` : ""}
+              </Text>
+            </View>
+            <View style={styles.tripRight}>
+              <Text style={styles.tripPay}>${Number(entry.pay).toFixed(2)}</Text>
+              {entry.recon_missed && <Text style={styles.missedTag}>MISSED</Text>}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      <DriverPhoneBookModal
+        visible={phoneBookVisible}
+        onClose={() => setPhoneBookVisible(false)}
+      />
+    </>
   );
 }
 
@@ -233,6 +252,24 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   signOutText: { fontSize: 10, color: "#666", letterSpacing: 1.5 },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  phoneBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  phoneIcon: {
+    fontSize: 18,
+  },
   heroCard: {
     backgroundColor: "#111",
     borderRadius: 12,
