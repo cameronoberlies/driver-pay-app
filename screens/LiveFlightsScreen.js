@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { flightAPI } from "../lib/flightAPI";
-import FlightDetailsModal from "./Flightdetailsmodal";
+import FlightDetailsModal from "./FlightDetailsModal";
 
 export default function LiveFlightsScreen() {
   const [flights, setFlights] = useState([]);
