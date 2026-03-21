@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Modal,
   Alert,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { supabase } from '../lib/supabase';
 
 // Trip status colors
@@ -29,6 +30,7 @@ export default function AdminTripsScreen() {
   const [view, setView] = useState('active'); // 'active' | 'all' | 'create'
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [routeTrip, setRouteTrip] = useState(null);
 
   // Load trips + profiles
   useEffect(() => {
@@ -152,6 +154,7 @@ export default function AdminTripsScreen() {
                 setShowFinalizeModal(true);
               }
             }}
+            onViewRoute={(t) => setRouteTrip(t)}
           />
         ))}
 
@@ -163,6 +166,14 @@ export default function AdminTripsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Route Map Modal */}
+      {routeTrip && (
+        <RouteMapModal
+          trip={routeTrip}
+          onClose={() => setRouteTrip(null)}
+        />
+      )}
 
       {/* Finalize Modal */}
       {showFinalizeModal && selectedTrip && (
@@ -185,7 +196,7 @@ export default function AdminTripsScreen() {
 }
 
 // ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────
-function TripCard({ trip, allProfiles, onPress }) {
+function TripCard({ trip, allProfiles, onPress, onViewRoute }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -204,6 +215,9 @@ function TripCard({ trip, allProfiles, onPress }) {
         minute: '2-digit',
       })
     : null;
+
+  const displayMiles = trip.miles || trip.actual_distance_miles;
+  const isCompleted = trip.status === 'completed' || trip.status === 'finalized';
 
   return (
     <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.7}>
@@ -232,6 +246,29 @@ function TripCard({ trip, allProfiles, onPress }) {
         </View>
       </View>
 
+      {/* Trip stats for completed trips */}
+      {isCompleted && (
+        <View style={s.tripStatsRow}>
+          {trip.hours ? <Text style={s.tripStat}>{trip.hours}h</Text> : null}
+          {trip.hours && displayMiles ? <Text style={s.tripStatDot}>·</Text> : null}
+          {displayMiles ? <Text style={s.tripStat}>{parseFloat(displayMiles).toFixed(1)} mi</Text> : null}
+        </View>
+      )}
+
+      {/* Route button or no-route label for completed trips */}
+      {isCompleted && trip.route_geojson && (
+        <TouchableOpacity
+          onPress={() => onViewRoute(trip)}
+          style={s.viewRouteBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={s.viewRouteText}>View Route</Text>
+        </TouchableOpacity>
+      )}
+      {isCompleted && !trip.route_geojson && (
+        <Text style={s.noRouteText}>No route data (manual trip)</Text>
+      )}
+
       {/* Drivers Row */}
       <View style={s.driversRow}>
         <Text style={s.driverLabel}>
@@ -253,6 +290,78 @@ function TripCard({ trip, allProfiles, onPress }) {
         </Text>
       )}
     </TouchableOpacity>
+  );
+}
+
+// ── ROUTE MAP MODAL ──────────────────────────────────────────────────────────
+function RouteMapModal({ trip, onClose }) {
+  const webviewRef = useRef(null);
+
+  const geojson = typeof trip.route_geojson === 'string'
+    ? trip.route_geojson
+    : JSON.stringify(trip.route_geojson);
+
+  const mapHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { width: 100%; height: 100%; background: #0a0a0a; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  const map = L.map('map', { zoomControl: true, attributionControl: false }).setView([36.0, -80.0], 6);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+
+  try {
+    const geojson = ${geojson};
+    const layer = L.geoJSON(geojson, {
+      style: { color: '#f5a623', weight: 3, opacity: 0.9 },
+      pointToLayer: function(feature, latlng) {
+        return L.circleMarker(latlng, { radius: 6, fillColor: '#f5a623', color: '#fff', weight: 2, fillOpacity: 1 });
+      }
+    }).addTo(map);
+    map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+  } catch(e) {
+    document.body.innerHTML = '<div style="color:#888;display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif;">Failed to load route</div>';
+  }
+</script>
+</body>
+</html>
+`;
+
+  return (
+    <Modal visible transparent animationType="slide">
+      <View style={s.routeModalContainer}>
+        <View style={s.routeModalHeader}>
+          <View>
+            <Text style={s.routeModalTitle}>{trip.city} — {trip.crm_id}</Text>
+            <Text style={s.routeModalSubtitle}>
+              {trip.actual_distance_miles ? `${parseFloat(trip.actual_distance_miles).toFixed(1)} mi` : ''}
+              {trip.actual_distance_miles && trip.actual_duration_minutes ? '  ·  ' : ''}
+              {trip.actual_duration_minutes ? `${Math.round(trip.actual_duration_minutes)} min` : ''}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={s.routeCloseBtn}>
+            <Text style={s.routeCloseText}>CLOSE</Text>
+          </TouchableOpacity>
+        </View>
+        <WebView
+          ref={webviewRef}
+          source={{ html: mapHtml }}
+          style={s.routeMap}
+          javaScriptEnabled
+          domStorageEnabled
+          originWhitelist={['*']}
+        />
+      </View>
+    </Modal>
   );
 }
 
@@ -866,6 +975,41 @@ const s = StyleSheet.create({
     color: '#f5a623',
     fontSize: 11,
   },
+  tripStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  tripStat: {
+    fontSize: 12,
+    color: '#d4d8df',
+    fontWeight: '600',
+  },
+  tripStatDot: {
+    color: '#6b7585',
+  },
+  viewRouteBtn: {
+    borderWidth: 1,
+    borderColor: '#f5a623',
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  viewRouteText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#f5a623',
+    letterSpacing: 0.5,
+  },
+  noRouteText: {
+    fontSize: 11,
+    color: '#6b7585',
+    fontStyle: 'italic',
+    marginBottom: 10,
+  },
   notesText: {
     fontSize: 12,
     color: '#6b7585',
@@ -1105,5 +1249,47 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#0d0f12',
+  },
+  // Route map modal
+  routeModalContainer: {
+    flex: 1,
+    backgroundColor: '#0d0f12',
+  },
+  routeModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1d24',
+  },
+  routeModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#d4d8df',
+  },
+  routeModalSubtitle: {
+    fontSize: 12,
+    color: '#6b7585',
+    marginTop: 2,
+  },
+  routeCloseBtn: {
+    borderWidth: 1,
+    borderColor: '#2a2d34',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 4,
+  },
+  routeCloseText: {
+    fontSize: 10,
+    color: '#f5a623',
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+  routeMap: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
   },
 });

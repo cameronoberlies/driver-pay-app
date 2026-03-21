@@ -1,132 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator, Alert, RefreshControl, AppState,
+  TouchableOpacity, ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
-import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
-import { getDistanceMiles, formatDuration } from '../lib/utils';
+import { formatDuration } from '../lib/utils';
+import RadarService from '../src/services/RadarService';
 
-const LOCATION_TASK = 'background-location-task';
 const TIMEOUT_MS = 8000;
-
-// ── Background task definition (must be at module level) ─────────────────────
-// This task runs natively even when iOS kills the JS runtime
-// PROPER FIX FOR BACKGROUND TRACKING TOKEN EXPIRATION
-// Replace your existing LOCATION_TASK definition in MyTripsScreen.js
-
-TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
-  if (error || !data) return;
-  const { locations } = data;
-  if (!locations || locations.length === 0) return;
-
-  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-  const { createClient } = require('@supabase/supabase-js');
-
-  try {
-    const stored = await AsyncStorage.getItem('activeTrip');
-    if (!stored) return;
-    const { tripId, userId, lastLat, lastLon, miles, startTime } = JSON.parse(stored);
-
-    // FIX: Get session from Supabase v2 storage key
-    const STORAGE_KEY = 'sb-yincjogkjvotupzgetqg-auth-token';
-    const sessionStr = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!sessionStr) {
-      console.log('[BG Task] No session in storage');
-      return;
-    }
-
-    const sessionData = JSON.parse(sessionStr);
-    let accessToken = sessionData?.access_token;
-    const refreshToken = sessionData?.refresh_token;
-
-    // Check if token is expired or about to expire
-    const expiresAt = sessionData?.expires_at;
-    const now = Math.floor(Date.now() / 1000);
-    const isExpired = expiresAt && now >= expiresAt;
-    const expiringSoon = expiresAt && (expiresAt - now) < 300; // Less than 5 minutes left
-
-    // Refresh token if expired or expiring soon
-    if ((isExpired || expiringSoon) && refreshToken) {
-      console.log('[BG Task] Token expired/expiring, refreshing...');
-
-      const tempClient = createClient(
-        process.env.EXPO_PUBLIC_SUPABASE_URL,
-        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-      );
-
-      const { data: refreshData, error: refreshError } = await tempClient.auth.refreshSession({
-        refresh_token: refreshToken
-      });
-
-      if (refreshError || !refreshData.session) {
-        console.log('[BG Task] Token refresh failed:', refreshError?.message);
-        return;
-      }
-
-      // Write back the refreshed session in the same format Supabase v2 expects
-      accessToken = refreshData.session.access_token;
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(refreshData.session));
-      console.log('[BG Task] Token refreshed successfully');
-    }
-
-    if (!accessToken) {
-      console.log('[BG Task] No access token available');
-      return;
-    }
-
-    // Create authenticated client with fresh token
-    const client = createClient(
-      process.env.EXPO_PUBLIC_SUPABASE_URL,
-      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-      { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
-    );
-
-    const loc = locations[locations.length - 1];
-    const { latitude, longitude } = loc.coords;
-
-    let newMiles = miles;
-    if (lastLat && lastLon) {
-      // Calculate distance using Haversine formula
-      const R = 3958.8; // Earth radius in miles
-      const dLat = (latitude - lastLat) * Math.PI / 180;
-      const dLon = (longitude - lastLon) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lastLat * Math.PI / 180) * Math.cos(latitude * Math.PI / 180) *
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      const distance = R * c;
-      newMiles += distance;
-    }
-
-    // Write to database
-    const { error: dbError } = await client.from('driver_locations').upsert({
-      driver_id: userId,
-      latitude,
-      longitude,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'driver_id' });
-
-    if (dbError) {
-      console.log('[BG Task] DB write error:', dbError.message);
-    } else {
-      console.log('[BG Task] Location updated successfully');
-    }
-
-    // Update AsyncStorage
-    await AsyncStorage.setItem('activeTrip', JSON.stringify({
-      tripId, userId,
-      lastLat: latitude,
-      lastLon: longitude,
-      miles: newMiles,
-      startTime,
-    }));
-
-  } catch (e) {
-    console.log('[BG Task] Error:', e.message);
-  }
-});
 
 function withTimeout(promise, ms) {
   return Promise.race([
@@ -225,37 +106,11 @@ export default function MyTripsScreen({ session }) {
 
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
-  const locationWatcherRef = useRef(null);
-  const appStateRef = useRef(AppState.currentState);
-
-  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-
-  // ── Sync miles from background task storage ──────────────────────────────
-  async function syncMilesFromStorage() {
-    try {
-      const stored = await AsyncStorage.getItem('activeTrip');
-      if (!stored) return;
-      const { miles } = JSON.parse(stored);
-      setActiveTrip(prev => prev ? { ...prev, miles } : prev);
-    } catch {}
-  }
-
-  // ── AppState listener to sync miles when foregrounded ────────────────────
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
-      if (appStateRef.current.match(/inactive|background/) && nextState === 'active') {
-        syncMilesFromStorage();
-      }
-      appStateRef.current = nextState;
-    });
-    return () => sub.remove();
-  }, []);
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (locationWatcherRef.current) locationWatcherRef.current.remove();
     };
   }, []);
 
@@ -280,11 +135,8 @@ export default function MyTripsScreen({ session }) {
         t => t.status === 'in_progress' && t.designated_driver_id === userId
       );
       if (inProgress) {
-        // Check if background task has stored state
-        const stored = await AsyncStorage.getItem('activeTrip');
-        const storedData = stored ? JSON.parse(stored) : null;
-        const miles = storedData?.miles ?? inProgress.miles ?? 0;
-        const startTime = storedData?.startTime ?? Date.now();
+        const miles = inProgress.miles ?? 0;
+        const startTime = inProgress.actual_start ? new Date(inProgress.actual_start).getTime() : Date.now();
         startTimeRef.current = startTime;
 
         setActiveTrip({ id: inProgress.id, miles, elapsed: Math.floor((Date.now() - startTime) / 1000) });
@@ -310,34 +162,24 @@ export default function MyTripsScreen({ session }) {
   useEffect(() => { load(); }, []);
   function onRefresh() { setRefreshing(true); load(); }
 
-  // ── GPS helpers ──────────────────────────────────────────────────────────
-  const requestPermissions = async () => {
-    const { status: fg } = await Location.requestForegroundPermissionsAsync();
-    if (fg !== 'granted') {
-      Alert.alert('Permission Required', 'Location access is needed to track your trip.');
-      return false;
-    }
-    const { status: bg } = await Location.requestBackgroundPermissionsAsync();
-    if (bg !== 'granted') {
-      Alert.alert('Background Location Required', 'Please allow "Always" location access in Settings so the app can track miles when your screen is locked.', [{ text: 'OK' }]);
-      return false;
-    }
-    return true;
-  };
-
-  const clearLiveLocation = async () => {
-    if (!session?.user?.id) return;
-    await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
-  };
-
   // ── Start trip ───────────────────────────────────────────────────────────
   async function handleStart(trip) {
-    const permitted = await requestPermissions();
-    if (!permitted) return;
+    // Start Radar tracking
+    const result = await RadarService.startTripTracking(trip.id);
 
+    if (!result.success) {
+      Alert.alert('Tracking Warning', result.error || 'GPS tracking may not work');
+      // Continue anyway - manual time tracking is fallback
+    }
+
+    // Update trip status in database
     const { error: err } = await supabase
       .from('trips')
-      .update({ status: 'in_progress', actual_start: new Date().toISOString() })
+      .update({
+        status: 'in_progress',
+        actual_start: new Date().toISOString(),
+        radar_external_id: trip.id,
+      })
       .eq('id', trip.id);
 
     if (err) { Alert.alert('Failed to start trip', err.message); return; }
@@ -345,7 +187,6 @@ export default function MyTripsScreen({ session }) {
     const startTime = Date.now();
     startTimeRef.current = startTime;
 
-    // Update UI immediately — don't wait for GPS/background task startup
     setActiveTrip({ id: trip.id, miles: 0, elapsed: 0 });
     setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, status: 'in_progress' } : t));
 
@@ -357,126 +198,81 @@ export default function MyTripsScreen({ session }) {
         elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000)
       } : prev);
     }, 1000);
-
-    // Store trip state in AsyncStorage for background task
-    await AsyncStorage.setItem('activeTrip', JSON.stringify({
-      tripId: trip.id,
-      userId: session.user.id,
-      lastLat: null,
-      lastLon: null,
-      miles: 0,
-      startTime,
-    }));
-
-    // Foreground watcher — pushes live location to driver_locations while app is open.
-    // This is the reliable path for the Live Drivers admin view; the background task
-    // (below) takes over if iOS kills the JS runtime.
-    if (locationWatcherRef.current) locationWatcherRef.current.remove();
-    locationWatcherRef.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 10 },
-      async (loc) => {
-        const { latitude, longitude } = loc.coords;
-
-        // Push live location to DB for admin Live Drivers view
-        await supabase.from('driver_locations').upsert({
-          driver_id: session.user.id,
-          latitude,
-          longitude,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'driver_id' });
-
-        // Accumulate miles in AsyncStorage (same logic as background task)
-        try {
-          const stored = await AsyncStorage.getItem('activeTrip');
-          if (!stored) return;
-          const tripData = JSON.parse(stored);
-          let newMiles = tripData.miles || 0;
-
-          if (tripData.lastLat && tripData.lastLon) {
-            newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
-          }
-
-          await AsyncStorage.setItem('activeTrip', JSON.stringify({
-            ...tripData,
-            lastLat: latitude,
-            lastLon: longitude,
-            miles: newMiles,
-          }));
-
-          // Update UI with new miles
-          setActiveTrip(prev => prev ? { ...prev, miles: newMiles } : prev);
-        } catch {}
-      }
-    );
-
-    // Background task — survives iOS runtime kills
-    await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-      accuracy: Location.Accuracy.High,
-      timeInterval: 10000,
-      distanceInterval: 50,
-      foregroundService: {
-        notificationTitle: 'Trip in Progress',
-        notificationBody: 'Discovery Driver Portal is tracking your location.',
-        notificationColor: '#f5a623',
-      },
-      pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: true,
-    });
   }
 
   // ── End trip ─────────────────────────────────────────────────────────────
   async function handleEnd(trip) {
     Alert.alert(
       'End Trip?',
-      'This will stop GPS tracking and mark the trip as complete.',
+      'This will stop tracking and mark the trip as complete.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'End Trip', style: 'destructive', onPress: async () => {
-            // Stop foreground watcher and background task
-            if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
-            const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
-            if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
-
             if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-            clearLiveLocation();
 
-            // Get final miles from AsyncStorage (background task may have updated it)
-            let finalMiles = 0;
-            let finalDriveTime = 0;
-            try {
-              const stored = await AsyncStorage.getItem('activeTrip');
-              if (stored) {
-                const { miles, startTime } = JSON.parse(stored);
-                finalMiles = parseFloat(miles.toFixed(1));
-                finalDriveTime = parseFloat(((Date.now() - startTime) / 3600000).toFixed(2));
-              }
-            } catch {}
+            // Stop Radar tracking and get route data
+            const result = await RadarService.stopTripTracking(trip.id, session.user.id);
 
-            await AsyncStorage.removeItem('activeTrip');
+            // Calculate hours from timestamps (fallback if Radar fails)
+            const startTime = new Date(trip.actual_start);
+            const endTime = new Date();
+            const manualHours = ((endTime - startTime) / (1000 * 60 * 60)).toFixed(2);
+
+            // Update trip with Radar data (or fallback to manual)
+            const finalMiles = result.success && result.tripData.actual_distance_miles
+              ? parseFloat(result.tripData.actual_distance_miles)
+              : trip.miles || 0;
+            const finalHours = result.success
+              ? parseFloat(result.tripData.hours)
+              : parseFloat(manualHours);
 
             const { error: err } = await supabase
               .from('trips')
               .update({
                 status: 'completed',
-                actual_end: new Date().toISOString(),
+                actual_end: endTime.toISOString(),
+                hours: finalHours,
                 miles: finalMiles,
-                hours: finalDriveTime,
+                actual_distance_miles: result.tripData?.actual_distance_miles,
+                actual_duration_minutes: result.tripData?.actual_duration_minutes,
+                route_geojson: result.tripData?.route_geojson,
               })
               .eq('id', trip.id);
 
             if (err) { Alert.alert('Failed to end trip', err.message); return; }
 
+            // If drive trip with second driver, copy data
+            if (trip.trip_type === 'drive' && trip.second_driver_id) {
+              await copyToSecondDriver(trip, result.tripData);
+            }
+
             setActiveTrip(null);
             setTrips(prev => prev.map(t =>
               t.id === trip.id
-                ? { ...t, status: 'completed', miles: finalMiles, hours: finalDriveTime }
+                ? { ...t, status: 'completed', miles: finalMiles, hours: finalHours }
                 : t
             ));
           }
         },
       ]
     );
+  }
+
+  async function copyToSecondDriver(trip, tripData) {
+    try {
+      await supabase
+        .from('trips')
+        .update({
+          actual_distance_miles: tripData?.actual_distance_miles,
+          actual_duration_minutes: tripData?.actual_duration_minutes,
+          route_geojson: tripData?.route_geojson,
+        })
+        .eq('id', trip.id)
+        .eq('second_driver_id', trip.second_driver_id);
+    } catch (e) {
+      console.warn('Failed to copy trip data to second driver:', e.message);
+    }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────

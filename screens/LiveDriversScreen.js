@@ -9,17 +9,20 @@ import { supabase } from '../lib/supabase';
 export default function LiveDriversScreen() {
   const [locations, setLocations] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [activeTrips, setActiveTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const webviewRef = useRef(null);
 
   async function load() {
-    const [{ data: locs }, { data: profs }] = await Promise.all([
+    const [{ data: locs }, { data: profs }, { data: trips }] = await Promise.all([
       supabase.from('driver_locations').select('*'),
       supabase.from('profiles').select('*').eq('role', 'driver'),
+      supabase.from('trips').select('*').eq('status', 'in_progress'),
     ]);
     setLocations(locs ?? []);
     setProfiles(profs ?? []);
+    setActiveTrips(trips ?? []);
     setLoading(false);
     setLastRefresh(new Date());
 

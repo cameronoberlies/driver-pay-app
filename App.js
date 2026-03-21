@@ -27,12 +27,12 @@ import AvailabilityScreen from "./screens/AvailabilityScreen";
 import LiveDriversScreen from "./screens/LiveDriversScreen";
 import DriverAvailabilityScreen from "./screens/DriverAvailabilityScreen";
 import AdminTripsScreen from "./screens/AdminTripsScreen";
-import AdminTrackingHealthScreen from "./screens/AdminTrackingHealthScreen";
-import { GeofenceManager } from "./lib/GeofenceManager";
 import { useUpdateChecker } from "./lib/AndroidUpdateChecker";
 import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
+import RadarService from './src/services/RadarService';
+
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -51,7 +51,6 @@ const ADMIN_TABS = [
   { id: "live", label: "Live Drivers" },
   { id: "trips", label: "Trips" },
   { id: "flights", label: "Live Flights" },
-  { id: "tracking", label: "Tracking Health" },
   { id: "geofence", label: "Geofence Activity" },
 ];
 
@@ -205,7 +204,7 @@ export default function App() {
       .eq("id", s.user.id)
       .single();
     if (error) {
-      await supabase.auth.signOut();
+      console.log("Profile fetch error:", error.message);
       return;
     }
     if (data) {
@@ -217,24 +216,25 @@ export default function App() {
     }
   }
 
-  // Check for OTA updates before anything else
-  useEffect(() => {
-    async function checkForUpdates() {
-      if (__DEV__) return;
-      try {
-        const update = await Updates.checkForUpdateAsync();
-        if (update.isAvailable) {
-          setIsUpdating(true);
-          await Updates.fetchUpdateAsync();
-          await Updates.reloadAsync();
-        }
-      } catch (e) {
-        console.log("Update check failed:", e);
-        setIsUpdating(false);
-      }
-    }
-    checkForUpdates();
-  }, []);
+  // OTA update check disabled — causes reload loop on launch
+  // expo-updates handles this natively on app start already
+  // useEffect(() => {
+  //   async function checkForUpdates() {
+  //     if (__DEV__) return;
+  //     try {
+  //       const update = await Updates.checkForUpdateAsync();
+  //       if (update.isAvailable) {
+  //         setIsUpdating(true);
+  //         await Updates.fetchUpdateAsync();
+  //         await Updates.reloadAsync();
+  //       }
+  //     } catch (e) {
+  //       console.log("Update check failed:", e);
+  //       setIsUpdating(false);
+  //     }
+  //   }
+  //   checkForUpdates();
+  // }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -252,6 +252,7 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "INITIAL_SESSION") return;
+      if (event === "TOKEN_REFRESHED") return;
       setSession(session);
       if (session) {
         loadProfile(session);
@@ -272,15 +273,15 @@ export default function App() {
             data: { session: currentSession },
           } = await supabase.auth.getSession();
           if (currentSession) {
-            setIsRefreshing(true);
             try {
               const { data } = await supabase.auth.refreshSession();
-              if (data?.session) setSession(data.session);
-            } finally {
-              setIsRefreshing(false);
+              if (data?.session && data.session.access_token !== currentSession.access_token) {
+                setSession(data.session);
+              }
+            } catch (e) {
+              console.log("Session refresh error:", e.message);
             }
           }
-          setRefreshKey((k) => k + 1);
         }
         appState.current = nextAppState;
       },
@@ -304,40 +305,44 @@ export default function App() {
     return () => {
       subscription.unsubscribe();
       appStateSubscription.remove();
-      if (notificationListener.current) {
-        notificationListener.current.remove();
-      }
-      if (responseListener.current) {
-        responseListener.current.remove();
-      }
+      Notifications.removeNotificationSubscription(notificationListener.current);
+      Notifications.removeNotificationSubscription(responseListener.current);
     };
   }, []);
 
-  // Start/stop geofence monitoring based on profile role
+
+  // Initialize/cleanup Radar tracking based on profile
   useEffect(() => {
     if (profile?.role === "driver") {
-      GeofenceManager.start().then(() => {
-        setTimeout(async () => {
-          const isActive = await GeofenceManager.isActive();
-          console.log("🔍 Geofence registered:", isActive);
-
-          const distance = await GeofenceManager.getDistanceFromGeofence();
-          console.log("🔍 Distance from home:", distance);
-        }, 3000);
-      });
+      initializeTracking();
+    } else {
+      cleanupTracking();
     }
     return () => {
-      GeofenceManager.stop();
+      cleanupTracking();
     };
   }, [profile]);
 
+  async function initializeTracking() {
+    const result = await RadarService.initialize(session?.user?.id, profile?.name);
+    if (result.success) {
+      console.log('✅ Radar initialized');
+    } else {
+      console.warn('⚠️ Radar init failed:', result.error);
+    }
+  }
+
+  async function cleanupTracking() {
+    await RadarService.cleanup();
+  }
+
   async function handleSignOut() {
     try {
+      await cleanupTracking();
       await supabase
         .from("driver_locations")
         .delete()
         .eq("driver_id", session.user.id);
-      await GeofenceManager.stop();
     } finally {
       await supabase.auth.signOut();
     }
@@ -381,8 +386,6 @@ export default function App() {
         return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
-      if (activeTab === "tracking")
-        return <AdminTrackingHealthScreen key={refreshKey} />;
       if (activeTab === "geofence")
         return <GeofenceActivityScreen key={refreshKey} />;
       if (activeTab === "flights")
