@@ -193,8 +193,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
+
   const appState = useRef(AppState.currentState);
   const notificationListener = useRef();
   const responseListener = useRef();
@@ -211,27 +210,25 @@ export default function App() {
     }
     if (data) {
       setProfile(data);
-      setActiveTab(data?.role === "admin" ? "overview" : "dashboard");
+      setActiveTab(prev => prev ?? (data?.role === "admin" ? "overview" : "dashboard"));
       // Register push token for drivers
       // Register push token
       registerForPushNotifications(s.user.id);
     }
   }
 
-  // Check for OTA updates before anything else
+  // Check for OTA updates — download silently, apply on next launch
   useEffect(() => {
     async function checkForUpdates() {
       if (__DEV__) return;
       try {
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
-          setIsUpdating(true);
           await Updates.fetchUpdateAsync();
-          await Updates.reloadAsync();
+          // Update applies automatically on next app launch — no reload loop
         }
       } catch (e) {
         console.log("Update check failed:", e);
-        setIsUpdating(false);
       }
     }
     checkForUpdates();
@@ -273,15 +270,13 @@ export default function App() {
             data: { session: currentSession },
           } = await supabase.auth.getSession();
           if (currentSession) {
-            setIsRefreshing(true);
             try {
               const { data } = await supabase.auth.refreshSession();
               if (data?.session) setSession(data.session);
-            } finally {
-              setIsRefreshing(false);
+            } catch (e) {
+              console.log("Session refresh failed:", e);
             }
           }
-          setRefreshKey((k) => k + 1);
         }
         appState.current = nextAppState;
       },
@@ -349,15 +344,10 @@ export default function App() {
     setRefreshKey((k) => k + 1);
   }
 
-  if (loading || isUpdating)
+  if (loading || (session && !activeTab))
     return (
       <View style={styles.loader}>
         <ActivityIndicator color="#f5a623" size="large" />
-        {isUpdating && (
-          <Text style={{ color: "#888", marginTop: 12 }}>
-            Loading update...
-          </Text>
-        )}
       </View>
     );
 
@@ -366,12 +356,6 @@ export default function App() {
   const isAdmin = profile?.role === "admin";
 
   function renderScreen() {
-    if (isRefreshing)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator color="#f5a623" size="large" />
-        </View>
-      );
     if (isAdmin) {
       if (activeTab === "overview") return <AdminOverview key={refreshKey} />;
       if (activeTab === "log") return <LogEntryScreen key={refreshKey} />;

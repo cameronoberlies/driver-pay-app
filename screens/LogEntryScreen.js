@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Switch, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import CityAutocomplete from '../components/CityAutocomplete';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 function formatDate(dateStr) {
   const [y, m, d] = dateStr.split('-');
@@ -125,6 +128,7 @@ export default function LogEntryScreen() {
   const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
@@ -207,6 +211,7 @@ export default function LogEntryScreen() {
   );
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
     <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
       {pending.length > 0 && (
@@ -251,7 +256,36 @@ export default function LogEntryScreen() {
       </ScrollView>
 
       <Text style={s.label}>DATE</Text>
-      <TextInput style={s.input} value={form.date} onChangeText={v => set('date', v)} placeholder="YYYY-MM-DD" placeholderTextColor="#333" />
+      <TouchableOpacity style={s.input} onPress={() => setShowDatePicker(true)}>
+        <Text style={{ color: '#fff', fontSize: 14 }}>
+          {new Date(form.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </Text>
+      </TouchableOpacity>
+      {showDatePicker && (
+        <View>
+          <DateTimePicker
+            value={new Date(form.date + 'T12:00:00')}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            themeVariant="dark"
+            textColor="#fff"
+            onChange={(event, selectedDate) => {
+              if (Platform.OS === 'android') setShowDatePicker(false);
+              if (selectedDate) {
+                const y = selectedDate.getFullYear();
+                const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                const d = String(selectedDate.getDate()).padStart(2, '0');
+                set('date', `${y}-${m}-${d}`);
+              }
+            }}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity style={s.pickerDone} onPress={() => setShowDatePicker(false)}>
+              <Text style={s.pickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       <View style={s.row}>
         <View style={s.half}>
@@ -279,7 +313,7 @@ export default function LogEntryScreen() {
       <TextInput style={s.input} value={form.estimated_cost} onChangeText={v => set('estimated_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#333" />
 
       <Text style={s.label}>CITY</Text>
-      <TextInput style={s.input} value={form.city} onChangeText={v => set('city', v)} placeholder="Charlotte" placeholderTextColor="#333" autoCapitalize="words" />
+      <CityAutocomplete style={s.input} value={form.city} onChangeText={v => set('city', v)} placeholder="Charlotte" placeholderTextColor="#333" />
 
       <Text style={s.label}>CARPAGE ID</Text>
       <TextInput style={s.input} value={form.crm_id} onChangeText={v => set('crm_id', v)} placeholder="CP-XXXX" placeholderTextColor="#333" autoCapitalize="characters" />
@@ -304,6 +338,7 @@ export default function LogEntryScreen() {
         </View>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -329,6 +364,8 @@ const s = StyleSheet.create({
   pillText: { fontSize: 12, color: '#555', fontWeight: '700' },
   pillTextActive: { color: '#f5a623' },
   flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
+  pickerDone: { alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 32, backgroundColor: '#f5a623', borderRadius: 6, marginTop: 8, marginBottom: 12 },
+  pickerDoneText: { fontSize: 14, fontWeight: '700', color: '#0a0a0a' },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 },
   switchLabel: { fontSize: 11, color: '#555', letterSpacing: 2, fontWeight: '700' },
   saveBtn: { backgroundColor: '#f5a623', padding: 16, alignItems: 'center', marginTop: 24 },

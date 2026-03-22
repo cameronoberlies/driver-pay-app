@@ -11,9 +11,11 @@ import {
   Modal,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
+import CityAutocomplete from '../components/CityAutocomplete';
 
 // Trip status colors
 const STATUS_COLORS = {
@@ -284,9 +286,8 @@ function CreateTripView({ drivers, onBack, onCreated }) {
   }
 
   function onDateChange(event, selectedDate) {
-    setShowDatePicker(false);
+    if (Platform.OS === 'android') setShowDatePicker(false);
     if (selectedDate) {
-      // Keep the time, just change the date
       const newDate = new Date(form.scheduled_pickup);
       newDate.setFullYear(selectedDate.getFullYear());
       newDate.setMonth(selectedDate.getMonth());
@@ -296,9 +297,8 @@ function CreateTripView({ drivers, onBack, onCreated }) {
   }
 
   function onTimeChange(event, selectedTime) {
-    setShowTimePicker(false);
+    if (Platform.OS === 'android') setShowTimePicker(false);
     if (selectedTime) {
-      // Keep the date, just change the time
       const newDate = new Date(form.scheduled_pickup);
       newDate.setHours(selectedTime.getHours());
       newDate.setMinutes(selectedTime.getMinutes());
@@ -355,6 +355,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
   });
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
     <ScrollView style={s.createContainer}>
       <View style={s.createHeader}>
         <TouchableOpacity onPress={onBack} style={s.backBtn}>
@@ -452,7 +453,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
 
         <View style={s.field}>
           <Text style={s.label}>City / Pickup Location *</Text>
-          <TextInput
+          <CityAutocomplete
             style={s.input}
             placeholder="Columbus, OH"
             placeholderTextColor="#6b7585"
@@ -492,21 +493,39 @@ function CreateTripView({ drivers, onBack, onCreated }) {
         </View>
 
         {showDatePicker && (
-          <DateTimePicker
-            value={form.scheduled_pickup}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={onDateChange}
-          />
+          <View>
+            <DateTimePicker
+              value={form.scheduled_pickup}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              themeVariant="dark"
+              textColor="#fff"
+              onChange={onDateChange}
+            />
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={s.pickerDone} onPress={() => setShowDatePicker(false)}>
+                <Text style={s.pickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
         {showTimePicker && (
-          <DateTimePicker
-            value={form.scheduled_pickup}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={onTimeChange}
-          />
+          <View>
+            <DateTimePicker
+              value={form.scheduled_pickup}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              themeVariant="dark"
+              textColor="#fff"
+              onChange={onTimeChange}
+            />
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={s.pickerDone} onPress={() => setShowTimePicker(false)}>
+                <Text style={s.pickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
         <View style={s.field}>
@@ -546,6 +565,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
         </TouchableOpacity>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1187,6 +1207,20 @@ const s = StyleSheet.create({
   },
   modalBtnSaveText: {
     fontSize: 13,
+    fontWeight: '700',
+    color: '#0d0f12',
+  },
+  pickerDone: {
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 32,
+    backgroundColor: '#f5a623',
+    borderRadius: 6,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  pickerDoneText: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#0d0f12',
   },
