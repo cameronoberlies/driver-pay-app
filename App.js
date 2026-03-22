@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import {
   SafeAreaProvider,
+  useSafeAreaInsets,
   initialWindowMetrics,
 } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
@@ -122,9 +123,9 @@ function AdminNav({ active, onSelect, onSignOut }) {
 }
 
 function DriverTabBar({ active, onSelect }) {
-  const bottomInset = Platform.OS === "android" ? 48 : 0;
+  const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.tabBar, { paddingBottom: bottomInset }]}>
+    <View style={[styles.tabBar, { paddingBottom: insets.bottom }]}>
       {["dashboard", "trips", "availability"].map((t) => (
         <TouchableOpacity
           key={t}
