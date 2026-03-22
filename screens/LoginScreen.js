@@ -16,6 +16,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -30,6 +31,35 @@ export default function LoginScreen() {
     setLoading(false);
   };
 
+  const handlePasswordReset = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address.');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'driverpay://reset-password', // Deep link for mobile app
+    });
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    Alert.alert(
+      'Check Your Email',
+      'We sent you a password reset link. Check your email and follow the instructions.',
+      [
+        {
+          text: 'OK',
+          onPress: () => setResetMode(false),
+        },
+      ]
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -37,11 +67,20 @@ export default function LoginScreen() {
     >
       <View style={styles.inner}>
         <View style={styles.logoBlock}>
-          <Text style={styles.logoText}>DRIVER<Text style={styles.logoAccent}>PAY</Text></Text>
+          <Text style={styles.logoText}>
+            DRIVER<Text style={styles.logoAccent}>PAY</Text>
+          </Text>
           <Text style={styles.logoSub}>Driver Portal</Text>
         </View>
 
         <View style={styles.form}>
+          {resetMode && (
+            <Text style={styles.resetInfo}>
+              Enter your email address and we'll send you a link to reset your
+              password.
+            </Text>
+          )}
+
           <Text style={styles.label}>EMAIL</Text>
           <TextInput
             style={styles.input}
@@ -53,27 +92,63 @@ export default function LoginScreen() {
             placeholder="you@driverportal.live"
           />
 
-          <Text style={styles.label}>PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholderTextColor="#555"
-            placeholder="••••••••"
-          />
+          {!resetMode && (
+            <>
+              <Text style={styles.label}>PASSWORD</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                placeholderTextColor="#555"
+                placeholder="••••••••"
+              />
+            </>
+          )}
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#0a0a0a" />
-            ) : (
-              <Text style={styles.buttonText}>SIGN IN →</Text>
-            )}
-          </TouchableOpacity>
+          {resetMode ? (
+            <>
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handlePasswordReset}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#0a0a0a" />
+                ) : (
+                  <Text style={styles.buttonText}>SEND RESET LINK →</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.backToLogin}
+                onPress={() => setResetMode(false)}
+              >
+                <Text style={styles.backToLoginText}>← Back to Login</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#0a0a0a" />
+                ) : (
+                  <Text style={styles.buttonText}>SIGN IN →</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.forgotPassword}
+                onPress={() => setResetMode(true)}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -82,13 +157,40 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingTop: 60 },
+  inner: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingTop: 60,
+  },
   logoBlock: { marginBottom: 48 },
-  logoText: { fontSize: 38, fontWeight: '900', color: '#ffffff', letterSpacing: 2 },
+  logoText: {
+    fontSize: 38,
+    fontWeight: '900',
+    color: '#ffffff',
+    letterSpacing: 2,
+  },
   logoAccent: { color: '#f5a623' },
-  logoSub: { fontSize: 12, color: '#555', letterSpacing: 3, marginTop: 4 },
+  logoSub: {
+    fontSize: 12,
+    color: '#555',
+    letterSpacing: 3,
+    marginTop: 4,
+  },
   form: { gap: 8 },
-  label: { fontSize: 11, color: '#888', letterSpacing: 2, marginBottom: 4, marginTop: 16 },
+  resetInfo: {
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  label: {
+    fontSize: 11,
+    color: '#888',
+    letterSpacing: 2,
+    marginBottom: 4,
+    marginTop: 16,
+  },
   input: {
     backgroundColor: '#1a1a1a',
     borderWidth: 1,
@@ -107,5 +209,28 @@ const styles = StyleSheet.create({
     marginTop: 28,
   },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#0a0a0a', fontWeight: '800', fontSize: 14, letterSpacing: 2 },
+  buttonText: {
+    color: '#0a0a0a',
+    fontWeight: '800',
+    fontSize: 14,
+    letterSpacing: 2,
+  },
+  forgotPassword: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  forgotPasswordText: {
+    color: '#f5a623',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  backToLogin: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  backToLoginText: {
+    color: '#888',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });

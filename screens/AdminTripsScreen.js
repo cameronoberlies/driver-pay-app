@@ -10,7 +10,9 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
 
 // Trip status colors
@@ -184,7 +186,7 @@ export default function AdminTripsScreen() {
   );
 }
 
-// ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────
+// ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────────────────────────
 function TripCard({ trip, allProfiles, onPress }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
@@ -256,7 +258,7 @@ function TripCard({ trip, allProfiles, onPress }) {
   );
 }
 
-// ── CREATE TRIP VIEW ─────────────────────────────────────────────────────────
+// ── CREATE TRIP VIEW ───────────────────────────────────────────────────────────────────────────────
 function CreateTripView({ drivers, onBack, onCreated }) {
   const now = new Date();
   const [form, setForm] = useState({
@@ -267,14 +269,41 @@ function CreateTripView({ drivers, onBack, onCreated }) {
     city: '',
     crm_id: '',
     carpage_link: '',
-    scheduled_pickup: now.toISOString().slice(0, 16),
+    scheduled_pickup: now,
     notes: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  
+  // Date picker states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function onDateChange(event, selectedDate) {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      // Keep the time, just change the date
+      const newDate = new Date(form.scheduled_pickup);
+      newDate.setFullYear(selectedDate.getFullYear());
+      newDate.setMonth(selectedDate.getMonth());
+      newDate.setDate(selectedDate.getDate());
+      set('scheduled_pickup', newDate);
+    }
+  }
+
+  function onTimeChange(event, selectedTime) {
+    setShowTimePicker(false);
+    if (selectedTime) {
+      // Keep the date, just change the time
+      const newDate = new Date(form.scheduled_pickup);
+      newDate.setHours(selectedTime.getHours());
+      newDate.setMinutes(selectedTime.getMinutes());
+      set('scheduled_pickup', newDate);
+    }
   }
 
   async function handleCreate() {
@@ -294,7 +323,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
       city: form.city,
       crm_id: form.crm_id,
       carpage_link: form.carpage_link || null,
-      scheduled_pickup: form.scheduled_pickup || null,
+      scheduled_pickup: form.scheduled_pickup.toISOString(),
       notes: form.notes || null,
       status: 'pending',
     };
@@ -314,6 +343,16 @@ function CreateTripView({ drivers, onBack, onCreated }) {
 
     onCreated(data);
   }
+
+  const formattedDate = form.scheduled_pickup.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const formattedTime = form.scheduled_pickup.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
   return (
     <ScrollView style={s.createContainer}>
@@ -433,16 +472,42 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           />
         </View>
 
+        {/* DATE & TIME PICKERS */}
         <View style={s.field}>
           <Text style={s.label}>Scheduled Pickup</Text>
-          <TextInput
-            style={s.input}
-            placeholder="YYYY-MM-DD HH:MM"
-            placeholderTextColor="#6b7585"
-            value={form.scheduled_pickup}
-            onChangeText={(text) => set('scheduled_pickup', text)}
-          />
+          <View style={s.dateTimeRow}>
+            <TouchableOpacity
+              style={s.dateTimeButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={s.dateTimeButtonText}>📅 {formattedDate}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={s.dateTimeButton}
+              onPress={() => setShowTimePicker(true)}
+            >
+              <Text style={s.dateTimeButtonText}>🕐 {formattedTime}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={form.scheduled_pickup}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={onDateChange}
+          />
+        )}
+
+        {showTimePicker && (
+          <DateTimePicker
+            value={form.scheduled_pickup}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={onTimeChange}
+          />
+        )}
 
         <View style={s.field}>
           <Text style={s.label}>Carpage Link</Text>
@@ -484,7 +549,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
   );
 }
 
-// ── FINALIZE TRIP MODAL ──────────────────────────────────────────────────────
+// ── FINALIZE TRIP MODAL ────────────────────────────────────────────────────────────────────────────
 function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
@@ -724,7 +789,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
   );
 }
 
-// ── STYLES ───────────────────────────────────────────────────────────────────
+// ── STYLES ───────────────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   container: {
     flex: 1,
@@ -975,6 +1040,25 @@ const s = StyleSheet.create({
   },
   segmentTextActive: {
     color: '#0d0f12',
+  },
+  // Date/Time Picker Styles
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dateTimeButton: {
+    flex: 1,
+    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+    borderWidth: 1,
+    borderColor: '#f5a623',
+    borderRadius: 4,
+    padding: 12,
+    alignItems: 'center',
+  },
+  dateTimeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f5a623',
   },
   errorText: {
     fontSize: 12,
