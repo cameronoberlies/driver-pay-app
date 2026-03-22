@@ -12,6 +12,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography } from '../lib/theme';
 
 export default function AdminTrackingHealthScreen() {
   const [locations, setLocations] = useState([]);
@@ -92,24 +93,24 @@ export default function AdminTrackingHealthScreen() {
 
           // Status determination
           let status = 'unknown';
-          let statusColor = '#666';
+          let statusColor = colors.textTertiary;
           let statusText = 'NO DATA';
 
           if (!location) {
             status = 'no_data';
-            statusColor = '#666';
+            statusColor = colors.textTertiary;
             statusText = 'NO LOCATION DATA';
           } else if (age < 2 * 60 * 1000) {
             status = 'active';
-            statusColor = '#4ae885';
+            statusColor = colors.success;
             statusText = 'ACTIVE';
           } else if (age < 10 * 60 * 1000) {
             status = 'stale';
-            statusColor = '#f5a623';
+            statusColor = colors.primary;
             statusText = 'STALE';
           } else {
             status = 'dead';
-            statusColor = '#e05252';
+            statusColor = colors.error;
             statusText = 'DEAD';
           }
 
@@ -208,9 +209,9 @@ export default function AdminTrackingHealthScreen() {
               )}
 
               {age >= 10 * 60 * 1000 && (
-                <View style={[s.recommendation, { backgroundColor: 'rgba(224, 82, 82, 0.1)', borderColor: '#e05252' }]}>
+                <View style={[s.recommendation, { backgroundColor: colors.errorDim, borderColor: colors.error }]}>
                   <Text style={s.recIcon}>🔴</Text>
-                  <Text style={[s.recText, { color: '#e05252' }]}>
+                  <Text style={[s.recText, { color: colors.error }]}>
                     Tracking appears dead. Driver needs to restart the app or trip.
                   </Text>
                 </View>
@@ -235,7 +236,7 @@ export default function AdminTrackingHealthScreen() {
                 <View
                   style={[
                     s.dot,
-                    { backgroundColor: isActive ? '#4ae885' : '#f5a623' },
+                    { backgroundColor: isActive ? colors.success : colors.primary },
                   ]}
                 />
                 <Text style={s.driverRowName}>{driver?.name || 'Unknown'}</Text>
@@ -255,7 +256,7 @@ function DetailRow({ label, value, alert }) {
   return (
     <View style={s.detailRow}>
       <Text style={s.detailLabel}>{label}</Text>
-      <Text style={[s.detailValue, alert && { color: '#f5a623' }]}>
+      <Text style={[s.detailValue, alert && { color: colors.primary }]}>
         {value}
       </Text>
     </View>
@@ -263,16 +264,16 @@ function DetailRow({ label, value, alert }) {
 }
 
 function Indicator({ label, status }) {
-  const colors = {
-    good: '#4ae885',
-    warning: '#f5a623',
-    bad: '#e05252',
-    unknown: '#666',
+  const indicatorColors = {
+    good: colors.success,
+    warning: colors.primary,
+    bad: colors.error,
+    unknown: colors.textTertiary,
   };
 
   return (
     <View style={s.indicator}>
-      <View style={[s.indicatorDot, { backgroundColor: colors[status] }]} />
+      <View style={[s.indicatorDot, { backgroundColor: indicatorColors[status] }]} />
       <Text style={s.indicatorLabel}>{label}</Text>
     </View>
   );
@@ -288,33 +289,32 @@ function formatDuration(seconds) {
 const s = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0d0f12',
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   title: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#d4d8df',
+    ...typography.h3,
+    color: colors.textPrimary,
     letterSpacing: 1,
   },
   refreshBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: '#f5a623',
-    borderRadius: 4,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
   },
   refreshText: {
-    fontSize: 11,
+    ...typography.captionSm,
     fontWeight: '700',
-    color: '#f5a623',
+    color: colors.primary,
     letterSpacing: 1,
   },
   scrollView: {
@@ -324,165 +324,161 @@ const s = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     marginTop: 100,
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   emptyState: {
-    padding: 40,
+    padding: spacing.xxxxl,
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 13,
-    color: '#6b7585',
+    ...typography.bodySm,
+    color: colors.textTertiary,
   },
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 8,
-    padding: 16,
-    margin: 16,
-    marginBottom: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    margin: spacing.lg,
+    marginBottom: spacing.md,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   cardLeft: {
     flex: 1,
   },
   driverName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#d4d8df',
-    marginBottom: 4,
+    ...typography.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   tripInfo: {
-    fontSize: 12,
-    color: '#6b7585',
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   statusBadge: {
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
   },
   statusText: {
-    fontSize: 9,
-    fontWeight: '700',
+    ...typography.labelSm,
     letterSpacing: 0.5,
   },
   details: {
     borderTopWidth: 1,
-    borderTopColor: '#1a1d24',
-    paddingTop: 12,
-    marginBottom: 12,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    marginBottom: spacing.md,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: spacing.sm,
   },
   detailLabel: {
-    fontSize: 11,
-    color: '#6b7585',
+    ...typography.captionSm,
+    color: colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   detailValue: {
-    fontSize: 12,
-    color: '#d4d8df',
+    ...typography.caption,
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   noDataBox: {
-    backgroundColor: 'rgba(107, 117, 133, 0.1)',
-    padding: 12,
-    borderRadius: 4,
+    backgroundColor: colors.surfaceElevated,
+    padding: spacing.md,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#1a1d24',
+    borderColor: colors.border,
   },
   noDataText: {
-    fontSize: 12,
-    color: '#6b7585',
+    ...typography.caption,
+    color: colors.textTertiary,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   noDataHint: {
-    fontSize: 11,
-    color: '#6b7585',
+    ...typography.captionSm,
+    color: colors.textTertiary,
     fontStyle: 'italic',
   },
   indicators: {
     flexDirection: 'row',
-    gap: 16,
-    marginTop: 12,
+    gap: spacing.lg,
+    marginTop: spacing.md,
   },
   indicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: spacing.sm,
   },
   indicatorDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: radius.full,
   },
   indicatorLabel: {
     fontSize: 10,
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   recommendation: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    marginTop: 12,
-    padding: 10,
-    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.primaryDim,
     borderWidth: 1,
-    borderColor: '#f5a623',
-    borderRadius: 4,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
   },
   recIcon: {
     fontSize: 14,
   },
   recText: {
     flex: 1,
-    fontSize: 11,
-    color: '#f5a623',
+    ...typography.captionSm,
+    color: colors.primary,
     lineHeight: 16,
   },
   allDriversSection: {
-    margin: 16,
-    marginTop: 24,
+    margin: spacing.lg,
+    marginTop: spacing.xxl,
   },
   sectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6b7585',
-    letterSpacing: 1,
-    marginBottom: 12,
+    ...typography.label,
+    color: colors.textTertiary,
+    marginBottom: spacing.md,
   },
   driverRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   dot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    marginRight: 10,
+    borderRadius: radius.full,
+    marginRight: spacing.md,
   },
   driverRowName: {
     flex: 1,
-    fontSize: 13,
-    color: '#d4d8df',
+    ...typography.bodySm,
+    color: colors.textPrimary,
   },
   driverRowTime: {
-    fontSize: 11,
-    color: '#6b7585',
+    ...typography.captionSm,
+    color: colors.textTertiary,
   },
 });

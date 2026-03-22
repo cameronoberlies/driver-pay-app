@@ -4,6 +4,7 @@ import {
   TextInput, RefreshControl, ActivityIndicator, Modal, ScrollView,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography, components } from '../lib/theme';
 
 function fmtDate(d) { const [y,m,day] = d.split('-'); return `${m}/${day}/${y}`; }
 function fmtMoney(n) { return '$' + Number(n||0).toLocaleString('en-US', { minimumFractionDigits: 2 }); }
@@ -348,81 +349,81 @@ export default function AllEntriesScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
+  container: { ...components.screen },
+  center: { ...components.center },
 
   // Top bar
-  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, gap: 10 },
-  search: { flex: 1, backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', color: '#fff', paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, borderRadius: 6 },
-  filterBtn: { borderWidth: 1, borderColor: '#1e1e1e', backgroundColor: '#111', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 6 },
-  filterBtnActive: { borderColor: '#f5a623', backgroundColor: 'rgba(245,166,35,0.1)' },
-  filterBtnText: { fontSize: 11, color: '#555', fontWeight: '700', letterSpacing: 1 },
-  filterBtnTextActive: { color: '#f5a623' },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.xl, paddingTop: spacing.lg, paddingBottom: spacing.sm, gap: spacing.md },
+  search: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, color: colors.textPrimary, paddingHorizontal: spacing.md, paddingVertical: spacing.md, ...typography.bodySm, borderRadius: radius.sm },
+  filterBtn: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.sm },
+  filterBtnActive: { borderColor: colors.primary, backgroundColor: colors.primaryDim },
+  filterBtnText: { ...typography.label, color: colors.textTertiary },
+  filterBtnTextActive: { color: colors.primary },
 
   // Active filter tags
-  tagRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 8, marginBottom: 8, alignItems: 'center' },
-  tag: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245,166,35,0.1)', borderWidth: 1, borderColor: '#f5a623', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4 },
-  tagDriver: { backgroundColor: 'rgba(59,140,247,0.1)', borderColor: '#3b8cf7' },
-  tagText: { fontSize: 10, color: '#f5a623', fontWeight: '600' },
-  tagDriverText: { color: '#3b8cf7' },
-  tagX: { fontSize: 10, color: '#f5a623', fontWeight: '700' },
-  clearAll: { fontSize: 10, color: '#e85a4a', fontWeight: '700', letterSpacing: 1 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.xl, gap: spacing.sm, marginBottom: spacing.sm, alignItems: 'center' },
+  tag: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primaryDim, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  tagDriver: { backgroundColor: colors.infoDim, borderColor: colors.info },
+  tagText: { ...typography.captionSm, fontWeight: '600', color: colors.primary },
+  tagDriverText: { color: colors.info },
+  tagX: { ...typography.captionSm, fontWeight: '700', color: colors.primary },
+  clearAll: { ...typography.captionSm, fontWeight: '700', color: colors.error, letterSpacing: 1 },
 
   // Result count
-  resultCount: { fontSize: 11, color: '#555', paddingHorizontal: 20, marginBottom: 8 },
+  resultCount: { ...typography.captionSm, color: colors.textTertiary, paddingHorizontal: spacing.xl, marginBottom: spacing.sm },
 
   // List
-  list: { paddingHorizontal: 20, paddingBottom: 40 },
-  card: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, borderLeftColor: '#2a2a2a', padding: 14, marginBottom: 8, borderRadius: 4 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  driverName: { fontSize: 14, fontWeight: '800', color: '#fff' },
-  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
-  pay: { fontSize: 16, fontWeight: '900', color: '#f5a623' },
-  cardMid: { flexDirection: 'row', gap: 12, marginBottom: 6 },
-  city: { fontSize: 11, color: '#888', fontWeight: '600' },
-  crm: { fontSize: 11, color: '#555' },
-  cardBot: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  meta: { fontSize: 11, color: '#555' },
-  badge: { backgroundColor: 'rgba(74,232,133,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 2 },
-  badgeMiss: { backgroundColor: 'rgba(232,90,74,0.15)' },
-  badgeText: { fontSize: 9, fontWeight: '700', color: '#4ae885', letterSpacing: 1 },
-  badgeTextMiss: { color: '#e85a4a' },
-  empty: { color: '#444', textAlign: 'center', marginTop: 32, fontSize: 13 },
+  list: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxxxl },
+  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: colors.borderLight, padding: spacing.lg, marginBottom: spacing.sm, borderRadius: radius.md },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
+  driverName: { ...typography.body, fontWeight: '800', color: colors.textPrimary },
+  flyBadge: { ...typography.caption, fontWeight: '700', color: colors.primary },
+  pay: { ...typography.h2, fontSize: 16, color: colors.primary },
+  cardMid: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.sm },
+  city: { ...typography.captionSm, fontWeight: '600', color: colors.textSecondary },
+  crm: { ...typography.captionSm, color: colors.textTertiary },
+  cardBot: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
+  meta: { ...typography.captionSm, color: colors.textTertiary },
+  badge: { backgroundColor: colors.successDim, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.sm },
+  badgeMiss: { backgroundColor: colors.errorDim },
+  badgeText: { ...typography.labelSm, color: colors.success, letterSpacing: 1 },
+  badgeTextMiss: { color: colors.error },
+  empty: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.xxxl, ...typography.bodySm },
 
   // Error
-  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
-  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
+  errorText: { ...components.errorText },
+  retryBtn: { ...components.retryBtn },
+  retryText: { ...components.retryText },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingBottom: 40, maxHeight: '80%' },
-  modalHandle: { width: 36, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  modalTitle: { fontSize: 16, fontWeight: '900', color: '#fff', letterSpacing: 2 },
-  modalClear: { fontSize: 11, color: '#e85a4a', fontWeight: '700', letterSpacing: 1 },
+  modalOverlay: { ...components.modalOverlay },
+  modalSheet: { ...components.modalSheet, maxHeight: '80%' },
+  modalHandle: { ...components.modalHandle },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xxl },
+  modalTitle: { ...typography.h3, fontWeight: '900', color: colors.textPrimary, letterSpacing: 2 },
+  modalClear: { ...typography.captionSm, color: colors.error, fontWeight: '700', letterSpacing: 1 },
 
   // Section labels
-  sectionLabel: { fontSize: 10, color: '#555', letterSpacing: 3, fontWeight: '700', marginBottom: 12, marginTop: 8 },
+  sectionLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 3, marginBottom: spacing.md, marginTop: spacing.sm },
 
   // Pill grid (wrapping)
-  pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
-  modalPill: { borderWidth: 1, borderColor: '#1e1e1e', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#0a0a0a', borderRadius: 6 },
-  modalPillActive: { borderColor: '#f5a623', backgroundColor: 'rgba(245,166,35,0.1)' },
+  pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
+  modalPill: { ...components.pill, borderRadius: radius.sm, paddingVertical: spacing.md, backgroundColor: colors.bg },
+  modalPillActive: { ...components.pillActive },
   modalPillDriver: {},
-  modalPillDriverActive: { borderColor: '#3b8cf7', backgroundColor: 'rgba(59,140,247,0.1)' },
-  modalPillText: { fontSize: 13, color: '#555', fontWeight: '600' },
-  modalPillTextActive: { color: '#f5a623' },
-  modalPillDriverTextActive: { color: '#3b8cf7' },
+  modalPillDriverActive: { borderColor: colors.info, backgroundColor: colors.infoDim },
+  modalPillText: { ...components.pillText },
+  modalPillTextActive: { ...components.pillTextActive },
+  modalPillDriverTextActive: { color: colors.info },
 
   // Custom date inputs
-  customDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 8 },
+  customDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg, gap: spacing.sm },
   dateInputWrap: { flex: 1 },
-  dateLabel: { fontSize: 9, color: '#555', letterSpacing: 2, marginBottom: 4 },
-  dateInput: { backgroundColor: '#0a0a0a', borderWidth: 1, borderColor: '#1e1e1e', color: '#fff', paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, borderRadius: 6 },
-  dateDash: { color: '#555', fontSize: 16, marginTop: 14 },
+  dateLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 2, marginBottom: spacing.xs },
+  dateInput: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, color: colors.textPrimary, paddingHorizontal: spacing.md, paddingVertical: spacing.md, ...typography.bodySm, borderRadius: radius.sm },
+  dateDash: { color: colors.textTertiary, fontSize: 16, marginTop: spacing.lg },
 
   // Apply button
-  applyBtn: { backgroundColor: '#f5a623', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginTop: 12 },
-  applyBtnText: { fontSize: 14, fontWeight: '800', color: '#0a0a0a', letterSpacing: 1 },
+  applyBtn: { ...components.buttonPrimary, borderRadius: radius.sm, marginTop: spacing.md },
+  applyBtnText: { ...components.buttonPrimaryText },
 });

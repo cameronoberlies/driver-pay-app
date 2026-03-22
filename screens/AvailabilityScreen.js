@@ -4,6 +4,7 @@ import {
   RefreshControl, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography } from '../lib/theme';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -45,7 +46,7 @@ export default function AvailabilityScreen() {
   useEffect(() => { load(); }, []);
   function onRefresh() { setRefreshing(true); load(); }
 
-  if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   if (error) return (
     <View style={s.center}>
@@ -68,7 +69,7 @@ export default function AvailabilityScreen() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
       {noTable ? (
         <View style={s.notice}>
@@ -122,26 +123,26 @@ export default function AvailabilityScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingTop: 20, paddingBottom: 40 },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginBottom: 14 },
-  card: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, borderLeftColor: '#3b8cf7', padding: 16, marginBottom: 10 },
-  driverName: { fontSize: 15, fontWeight: '800', color: '#fff', marginBottom: 12 },
-  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
-  daysRow: { flexDirection: 'row', gap: 6 },
-  dayChip: { width: 34, height: 34, borderRadius: 4, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#2a2a2a' },
-  dayAvail: { backgroundColor: 'rgba(74,232,133,0.15)', borderColor: '#4ae885' },
-  dayUnavail: { backgroundColor: 'rgba(232,90,74,0.1)', borderColor: '#2a2a2a' },
-  dayLabel: { fontSize: 10, fontWeight: '800', color: '#444', letterSpacing: 0.5 },
-  dayLabelAvail: { color: '#4ae885' },
-  dayLabelUnavail: { color: '#333' },
-  empty: { color: '#555', fontSize: 13, textAlign: 'center', marginTop: 8, lineHeight: 20 },
-  notice: { backgroundColor: '#111', borderWidth: 1, borderColor: '#2a2a2a', padding: 20 },
-  noticeTitle: { fontSize: 12, color: '#e85a4a', fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
-  noticeText: { fontSize: 13, color: '#888', marginBottom: 14 },
-  code: { fontFamily: 'monospace', fontSize: 11, color: '#f5a623', lineHeight: 18 },
-  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
-  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.xl, paddingTop: spacing.xl, paddingBottom: spacing.xxxxl },
+  center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  sectionTitle: { ...typography.label, color: colors.textMuted, marginBottom: spacing.lg },
+  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: colors.info, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md },
+  driverName: { fontSize: 15, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  daysRow: { flexDirection: 'row', gap: radius.sm },
+  dayChip: { width: 34, height: 34, borderRadius: radius.sm, backgroundColor: colors.surfaceElevated, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.borderLight },
+  dayAvail: { backgroundColor: colors.successDim, borderColor: colors.success },
+  dayUnavail: { backgroundColor: colors.errorDim, borderColor: colors.borderLight },
+  dayLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5 },
+  dayLabelAvail: { color: colors.success },
+  dayLabelUnavail: { color: colors.textMuted },
+  empty: { ...typography.bodySm, color: colors.textTertiary, textAlign: 'center', marginTop: spacing.sm },
+  notice: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderLight, borderRadius: radius.md, padding: spacing.xl },
+  noticeTitle: { fontSize: 12, color: colors.error, fontWeight: '900', letterSpacing: 2, marginBottom: spacing.sm },
+  noticeText: { ...typography.bodySm, color: colors.textSecondary, marginBottom: spacing.lg },
+  code: { fontFamily: 'monospace', fontSize: 11, color: colors.primary, lineHeight: 18 },
+  errorText: { color: colors.textTertiary, fontSize: 14, marginBottom: spacing.lg },
+  retryBtn: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: spacing.xxl, paddingVertical: spacing.md },
+  retryText: { color: colors.primary, fontSize: 12, letterSpacing: 2, fontWeight: '700' },
 });

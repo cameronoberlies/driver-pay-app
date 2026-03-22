@@ -12,6 +12,7 @@ import {
   Modal,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography } from '../lib/theme';
 
 export default function DriverPhoneBookModal({ visible, onClose }) {
   const [drivers, setDrivers] = useState([]);
@@ -62,7 +63,7 @@ export default function DriverPhoneBookModal({ visible, onClose }) {
 
   function handleCallDriver(phoneNumber) {
     if (!phoneNumber) return;
-    
+
     // Remove any formatting and just keep digits
     const cleanPhone = phoneNumber.replace(/\D/g, '');
     Linking.openURL(`tel:${cleanPhone}`);
@@ -70,15 +71,15 @@ export default function DriverPhoneBookModal({ visible, onClose }) {
 
   function formatPhoneNumber(phone) {
     if (!phone) return null;
-    
+
     // Remove all non-digits
     const cleaned = phone.replace(/\D/g, '');
-    
+
     // Format as (XXX) XXX-XXXX
     if (cleaned.length === 10) {
       return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
     }
-    
+
     // Return as-is if not 10 digits
     return phone;
   }
@@ -139,7 +140,7 @@ export default function DriverPhoneBookModal({ visible, onClose }) {
             <TextInput
               style={styles.searchInput}
               placeholder="Search by name..."
-              placeholderTextColor="#555"
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="words"
@@ -158,7 +159,7 @@ export default function DriverPhoneBookModal({ visible, onClose }) {
           {/* Driver List */}
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#f5a623" />
+              <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>Loading drivers...</Text>
             </View>
           ) : (
@@ -175,7 +176,7 @@ export default function DriverPhoneBookModal({ visible, onClose }) {
                     setRefreshing(true);
                     loadDrivers();
                   }}
-                  tintColor="#f5a623"
+                  tintColor={colors.primary}
                 />
               }
               ListEmptyComponent={
@@ -197,152 +198,150 @@ export default function DriverPhoneBookModal({ visible, onClose }) {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
   },
   modalContainer: {
-    backgroundColor: '#0a0a0a',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
     maxHeight: '90%',
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.border,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    padding: 24,
-    paddingBottom: 16,
+    padding: spacing.xxl,
+    paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: colors.border,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: 0.5,
+    ...typography.displaySm,
+    color: colors.textPrimary,
   },
   subtitle: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 4,
+    ...typography.bodySm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   closeButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeText: {
     fontSize: 20,
-    color: '#888',
+    color: colors.textSecondary,
     fontWeight: '700',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111',
-    margin: 16,
-    marginBottom: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    margin: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.border,
   },
   searchIcon: {
     fontSize: 16,
-    marginRight: 8,
+    marginRight: spacing.sm,
   },
   searchInput: {
     flex: 1,
     height: 48,
     fontSize: 15,
-    color: '#fff',
+    color: colors.textPrimary,
   },
   clearButton: {
     width: 24,
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
-    backgroundColor: '#1a1a1a',
+    borderRadius: spacing.md,
+    backgroundColor: colors.border,
   },
   clearIcon: {
     fontSize: 12,
-    color: '#888',
+    color: colors.textSecondary,
   },
   listContent: {
-    padding: 16,
-    paddingTop: 8,
-    paddingBottom: 32,
+    padding: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxxl,
   },
   driverCard: {
-    backgroundColor: '#111',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.border,
   },
   driverInfo: {
-    gap: 8,
+    gap: spacing.sm,
   },
   driverName: {
+    ...typography.h2,
     fontSize: 17,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   phoneButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0a0a0a',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    backgroundColor: colors.bg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: colors.border,
     alignSelf: 'flex-start',
   },
   phoneIcon: {
     fontSize: 16,
-    marginRight: 8,
+    marginRight: spacing.sm,
   },
   phoneNumber: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#f5a623',
+    color: colors.primary,
     letterSpacing: 0.3,
   },
   noPhone: {
-    fontSize: 13,
-    color: '#555',
+    ...typography.bodySm,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 48,
+    paddingVertical: spacing.xxxxl,
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-    color: '#888',
+    marginTop: spacing.lg,
+    ...typography.body,
+    color: colors.textSecondary,
   },
   emptyContainer: {
     alignItems: 'center',
-    paddingVertical: 48,
+    paddingVertical: spacing.xxxxl,
   },
   emptyIcon: {
     fontSize: 48,
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   emptyText: {
     fontSize: 15,
-    color: '#888',
+    color: colors.textSecondary,
   },
 });

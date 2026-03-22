@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography, components } from '../lib/theme';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -88,7 +89,7 @@ export default function LoginScreen() {
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
-            placeholderTextColor="#555"
+            placeholderTextColor={colors.textMuted}
             placeholder="you@driverportal.live"
           />
 
@@ -100,7 +101,7 @@ export default function LoginScreen() {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
-                placeholderTextColor="#555"
+                placeholderTextColor={colors.textMuted}
                 placeholder="••••••••"
               />
             </>
@@ -114,7 +115,7 @@ export default function LoginScreen() {
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color="#0a0a0a" />
+                  <ActivityIndicator color={colors.bg} />
                 ) : (
                   <Text style={styles.buttonText}>SEND RESET LINK →</Text>
                 )}
@@ -135,7 +136,7 @@ export default function LoginScreen() {
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color="#0a0a0a" />
+                  <ActivityIndicator color={colors.bg} />
                 ) : (
                   <Text style={styles.buttonText}>SIGN IN →</Text>
                 )}
@@ -156,81 +157,86 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
   inner: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: spacing.xxxl,
     paddingTop: 60,
   },
-  logoBlock: { marginBottom: 48 },
+  logoBlock: {
+    marginBottom: spacing.xxxxl,
+  },
   logoText: {
+    ...typography.displayLg,
     fontSize: 38,
-    fontWeight: '900',
-    color: '#ffffff',
+    color: colors.textPrimary,
     letterSpacing: 2,
   },
-  logoAccent: { color: '#f5a623' },
-  logoSub: {
-    fontSize: 12,
-    color: '#555',
-    letterSpacing: 3,
-    marginTop: 4,
+  logoAccent: {
+    color: colors.primary,
   },
-  form: { gap: 8 },
+  logoSub: {
+    ...typography.label,
+    color: colors.textTertiary,
+    letterSpacing: 3,
+    marginTop: spacing.xs,
+  },
+  form: {
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xxl,
+  },
   resetInfo: {
-    fontSize: 13,
-    color: '#888',
-    marginBottom: 16,
-    lineHeight: 20,
+    ...typography.bodySm,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
   },
   label: {
-    fontSize: 11,
-    color: '#888',
-    letterSpacing: 2,
-    marginBottom: 4,
-    marginTop: 16,
+    ...typography.label,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    marginTop: spacing.lg,
   },
   input: {
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    borderRadius: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: '#ffffff',
-    fontSize: 15,
+    ...components.input,
+    borderRadius: radius.sm,
   },
   button: {
-    backgroundColor: '#f5a623',
-    borderRadius: 6,
-    paddingVertical: 16,
-    alignItems: 'center',
+    ...components.buttonPrimary,
+    borderRadius: radius.md,
+    paddingVertical: 18,
     marginTop: 28,
   },
-  buttonDisabled: { opacity: 0.5 },
+  buttonDisabled: {
+    ...components.buttonDisabled,
+  },
   buttonText: {
-    color: '#0a0a0a',
-    fontWeight: '800',
-    fontSize: 14,
+    ...components.buttonPrimaryText,
     letterSpacing: 2,
   },
   forgotPassword: {
-    marginTop: 20,
+    marginTop: spacing.xl,
     alignItems: 'center',
   },
   forgotPasswordText: {
-    color: '#f5a623',
-    fontSize: 13,
+    ...typography.bodySm,
+    color: colors.primary,
     fontWeight: '600',
   },
   backToLogin: {
-    marginTop: 20,
+    marginTop: spacing.xl,
     alignItems: 'center',
   },
   backToLoginText: {
-    color: '#888',
-    fontSize: 13,
+    ...typography.bodySm,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
 });

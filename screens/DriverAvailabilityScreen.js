@@ -4,6 +4,7 @@ import {
   TouchableOpacity, ActivityIndicator, TextInput, Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography, components } from '../lib/theme';
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -115,7 +116,7 @@ export default function DriverAvailabilityScreen({ session }) {
   if (loading) {
     return (
       <View style={s.center}>
-        <ActivityIndicator color="#f5a623" />
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
@@ -124,10 +125,10 @@ export default function DriverAvailabilityScreen({ session }) {
     <View style={s.container}>
     <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
       {/* Header */}
-      <View style={{ marginBottom: 32, alignItems: 'center' }}>
+      <View style={{ marginBottom: spacing.xxxl, alignItems: 'center' }}>
         <Text style={s.heading}>AVAILABILITY</Text>
         <Text style={s.subheading}>Select the days you're available{'\n'}for trips this week</Text>
-        <Text style={[s.subheading, { marginBottom: 0, fontSize: 11, color: '#555' }]}>{getNextWeekLabel()}</Text>
+        <Text style={[s.subheading, { marginBottom: 0, fontSize: 11, color: colors.textTertiary }]}>{getNextWeekLabel()}</Text>
       </View>
 
       {/* Already submitted banner */}
@@ -164,8 +165,8 @@ export default function DriverAvailabilityScreen({ session }) {
               <Switch
                 value={avail[day]}
                 onValueChange={val => setAvail(a => ({ ...a, [day]: val }))}
-                trackColor={{ false: '#1a1a1a', true: 'rgba(245,166,35,0.4)' }}
-                thumbColor={avail[day] ? '#f5a623' : '#444'}
+                trackColor={{ false: colors.surfaceBorder, true: colors.primaryBorder }}
+                thumbColor={avail[day] ? colors.primary : colors.textMuted}
               />
               <Text style={[s.dayLabel, avail[day] && s.dayLabelActive]}>
                 {DAY_LABELS[i]}
@@ -179,7 +180,7 @@ export default function DriverAvailabilityScreen({ session }) {
                   value={avail[`${day}_done_by`]}
                   onChangeText={val => setAvail(a => ({ ...a, [`${day}_done_by`]: val }))}
                   placeholder="e.g. 3:00 PM"
-                  placeholderTextColor="#333"
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="default"
                 />
               </View>
@@ -197,7 +198,7 @@ export default function DriverAvailabilityScreen({ session }) {
             value={reason}
             onChangeText={setReason}
             placeholder="e.g. Doctor appointment on Monday"
-            placeholderTextColor="#333"
+            placeholderTextColor={colors.textMuted}
           />
         </View>
       )}
@@ -230,73 +231,78 @@ export default function DriverAvailabilityScreen({ session }) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { flex: 1, padding: 20, paddingTop: 80, paddingBottom: 100, justifyContent: 'center' },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
+  container: { ...components.screen },
+  content: { flex: 1, padding: spacing.xl, paddingTop: 80, paddingBottom: 100, justifyContent: 'center' },
+  center: { ...components.center },
 
-  heading: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: 8, textAlign: 'center' },
-  subheading: { fontSize: 13, color: '#888', marginBottom: 32, textAlign: 'center', lineHeight: 20 },
+  heading: { ...typography.displaySm, color: colors.textPrimary, letterSpacing: 2, marginBottom: spacing.sm, textAlign: 'center' },
+  subheading: { ...typography.bodySm, color: colors.textSecondary, marginBottom: spacing.xxxl, textAlign: 'center' },
 
   submittedBanner: {
-    backgroundColor: 'rgba(74,232,133,0.08)',
-    borderWidth: 1, borderColor: 'rgba(74,232,133,0.2)',
-    padding: 12, marginBottom: 16,
+    backgroundColor: colors.successDim,
+    borderWidth: 1, borderColor: colors.successBorder,
+    borderRadius: radius.sm,
+    padding: spacing.md, marginBottom: spacing.lg,
   },
-  submittedText: { fontSize: 12, color: '#4ae885', fontWeight: '600' },
-  amendedText: { fontSize: 11, color: '#f5a623', marginTop: 4 },
+  submittedText: { ...typography.caption, color: colors.success, fontWeight: '600' },
+  amendedText: { ...typography.captionSm, color: colors.primary, marginTop: spacing.xs },
 
   warningBanner: {
-    backgroundColor: 'rgba(245,166,35,0.08)',
-    borderWidth: 1, borderColor: 'rgba(245,166,35,0.25)',
-    padding: 12, marginBottom: 16,
+    backgroundColor: colors.primaryDim,
+    borderWidth: 1, borderColor: colors.primaryBorder,
+    borderRadius: radius.sm,
+    padding: spacing.md, marginBottom: spacing.lg,
   },
-  warningText: { fontSize: 12, color: '#f5a623', lineHeight: 18 },
+  warningText: { ...typography.caption, color: colors.primary, lineHeight: 18 },
 
   daysContainer: {
-    backgroundColor: '#111',
-    borderWidth: 1, borderColor: '#1e1e1e',
-    borderRadius: 8,
-    marginBottom: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md,
+    marginBottom: spacing.xl,
   },
   dayRow: {
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
-    padding: 14, minHeight: 56,
+    borderBottomWidth: 1, borderBottomColor: colors.surfaceBorder,
+    padding: spacing.lg, minHeight: 56,
   },
-  dayLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dayLabel: { fontSize: 16, fontWeight: '600', color: '#fff', letterSpacing: 0.5 },
-  dayLabelActive: { color: '#fff' },
+  dayLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  dayLabel: { ...typography.h3, color: colors.textPrimary, fontWeight: '600', letterSpacing: 0.5 },
+  dayLabelActive: { color: colors.textPrimary },
 
   doneByRow: {
     flexDirection: 'row', alignItems: 'center',
-    gap: 10, marginTop: 10, marginLeft: 52,
+    gap: spacing.md, marginTop: spacing.md, marginLeft: 52,
   },
-  doneByLabel: { fontSize: 11, color: '#555' },
+  doneByLabel: { ...typography.captionSm, color: colors.textTertiary },
   timeInput: {
-    flex: 1, backgroundColor: '#0a0a0a',
-    borderWidth: 1, borderColor: '#2a2a2a',
-    color: '#fff', padding: 8, fontSize: 13,
+    flex: 1, backgroundColor: colors.bg,
+    borderWidth: 1, borderColor: colors.borderLight,
+    borderRadius: radius.sm,
+    color: colors.textPrimary, padding: spacing.sm, fontSize: 13,
   },
 
-  field: { marginBottom: 16 },
-  fieldLabel: { fontSize: 10, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 6 },
-  required: { color: '#e05252' },
+  field: { marginBottom: spacing.lg },
+  fieldLabel: { ...typography.label, fontSize: 10, color: colors.textTertiary, letterSpacing: 2, marginBottom: spacing.sm },
+  required: { color: colors.error },
   input: {
-    backgroundColor: '#111', borderWidth: 1, borderColor: '#2a2a2a',
-    color: '#fff', padding: 12, fontSize: 14,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderLight,
+    borderRadius: radius.sm,
+    color: colors.textPrimary, padding: spacing.md, fontSize: 14,
   },
 
   saveBtn: {
-    backgroundColor: '#f5a623', padding: 18,
-    alignItems: 'center', marginTop: 32, marginBottom: 16,
-    borderRadius: 8,
+    backgroundColor: colors.primary, padding: 18,
+    alignItems: 'center', marginTop: spacing.xxxl, marginBottom: spacing.lg,
+    borderRadius: radius.md,
   },
-  saveBtnDisabled: { opacity: 0.4 },
-  saveBtnText: { color: '#0a0a0a', fontWeight: '900', fontSize: 16, letterSpacing: 2 },
+  saveBtnDisabled: { ...components.buttonDisabled },
+  saveBtnText: { color: colors.bg, fontWeight: '900', fontSize: 16, letterSpacing: 2 },
 
   successToast: {
-    backgroundColor: 'rgba(74,232,133,0.1)',
-    borderWidth: 1, borderColor: '#4ae885',
-    padding: 12, alignItems: 'center',
+    backgroundColor: colors.successDim,
+    borderWidth: 1, borderColor: colors.success,
+    borderRadius: radius.sm,
+    padding: spacing.md, alignItems: 'center',
   },
-  successText: { color: '#4ae885', fontSize: 13, fontWeight: '600' },
+  successText: { ...typography.bodySm, color: colors.success, fontWeight: '600' },
 });

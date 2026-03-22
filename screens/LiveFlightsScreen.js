@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { flightAPI } from "../lib/flightAPI";
 import FlightDetailsModal from "./FlightDetailsModal";
+import { colors, spacing, radius, typography } from "../lib/theme";
 
 export default function LiveFlightsScreen() {
   const [flights, setFlights] = useState([]);
@@ -73,7 +74,7 @@ export default function LiveFlightsScreen() {
   if (loading) {
     return (
       <View style={styles.loader}>
-        <ActivityIndicator color="#f5a623" size="large" />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
@@ -87,7 +88,7 @@ export default function LiveFlightsScreen() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          tintColor="#f5a623"
+          tintColor={colors.primary}
         />
       }
     >
@@ -135,10 +136,10 @@ function FlightGroup({ status, flights, expanded, onToggle, onFlightPress }) {
   if (flights.length === 0) return null;
 
   const statusConfig = {
-    IN_AIR: { emoji: "🛫", label: "IN AIR", color: "#4a9eff" },
-    DELAYED: { emoji: "⚠️", label: "DELAYED", color: "#ff9500" },
-    SCHEDULED: { emoji: "📅", label: "SCHEDULED", color: "#888" },
-    LANDED: { emoji: "✅", label: "LANDED", color: "#4cd964" },
+    IN_AIR: { emoji: "🛫", label: "IN AIR", color: colors.info },
+    DELAYED: { emoji: "⚠️", label: "DELAYED", color: colors.warning },
+    SCHEDULED: { emoji: "📅", label: "SCHEDULED", color: colors.textSecondary },
+    LANDED: { emoji: "✅", label: "LANDED", color: colors.success },
   };
 
   const config = statusConfig[status];
@@ -206,50 +207,51 @@ function FlightCard({ flight, statusColor }) {
 
 // Styles...
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1, backgroundColor: colors.bg },
   loader: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#0a0a0a",
+    backgroundColor: colors.bg,
   },
   statsBar: {
-    padding: 16,
-    backgroundColor: "#111",
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+    borderBottomColor: colors.border,
+    borderRadius: radius.md,
   },
-  statText: { fontSize: 14, color: "#f5a623", fontWeight: "700" },
-  group: { marginBottom: 16 },
+  statText: { ...typography.body, fontWeight: "700", color: colors.primary },
+  group: { marginBottom: spacing.lg },
   groupHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "#111",
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
   },
   groupTitle: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: "700",
-    color: "#fff",
+    color: colors.textPrimary,
     letterSpacing: 1,
   },
-  expandIcon: { fontSize: 12, color: "#888" },
+  expandIcon: { ...typography.caption, color: colors.textSecondary },
   card: {
-    backgroundColor: "#111",
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    marginTop: 8,
-    borderRadius: 8,
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
     borderLeftWidth: 3,
-    borderLeftColor: "#f5a623",
+    borderLeftColor: colors.primary,
   },
-  cardFlight: { fontSize: 15, fontWeight: "700", color: "#fff" },
-  cardRoute: { fontSize: 13, color: "#888", marginTop: 4 },
-  cardDetails: { fontSize: 12, color: "#4a9eff", marginTop: 4 },
-  cardEta: { fontSize: 12, color: "#888", marginTop: 4 },
+  cardFlight: { ...typography.bodyLg, fontWeight: "700", color: colors.textPrimary, fontSize: 15 },
+  cardRoute: { ...typography.bodySm, color: colors.textSecondary, marginTop: spacing.xs },
+  cardDetails: { ...typography.caption, color: colors.info, marginTop: spacing.xs },
+  cardEta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   emptyState: { alignItems: "center", marginTop: 100 },
   emptyText: { fontSize: 60 },
-  emptySubtext: { fontSize: 14, color: "#555", marginTop: 12 },
+  emptySubtext: { ...typography.body, color: colors.textTertiary, marginTop: spacing.md },
 });

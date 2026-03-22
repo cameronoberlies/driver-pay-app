@@ -4,6 +4,7 @@ import {
   RefreshControl, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography } from '../lib/theme';
 
 function getWeekBounds() {
   const d = new Date();
@@ -71,7 +72,7 @@ export default function MileageCostsScreen() {
   const totalMiles = weekEntries.reduce((t, e) => t + Number(e.miles ?? 0), 0);
   const variance = totalActual - totalEstimated;
 
-  if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   if (error) return (
     <View style={s.center}>
@@ -84,7 +85,7 @@ export default function MileageCostsScreen() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
       <Text style={s.period}>
         {wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} –{' '}
@@ -106,9 +107,9 @@ export default function MileageCostsScreen() {
           <Text style={s.statLabel}>ESTIMATED</Text>
           <Text style={s.statValue}>{fmtMoney(totalEstimated)}</Text>
         </View>
-        <View style={[s.statCard, { borderColor: variance > 0 ? '#e85a4a' : '#4ae885' }]}>
+        <View style={[s.statCard, { borderColor: variance > 0 ? colors.error : colors.success }]}>
           <Text style={s.statLabel}>VARIANCE</Text>
-          <Text style={[s.statValue, { color: variance > 0 ? '#e85a4a' : '#4ae885' }]}>
+          <Text style={[s.statValue, { color: variance > 0 ? colors.error : colors.success }]}>
             {variance >= 0 ? '+' : ''}{fmtMoney(variance)}
           </Text>
         </View>
@@ -144,7 +145,7 @@ export default function MileageCostsScreen() {
               </View>
               <View style={s.cardStat}>
                 <Text style={s.cardStatLabel}>VAR</Text>
-                <Text style={[s.cardStatValue, { color: v > 0 ? '#e85a4a' : '#4ae885' }]}>
+                <Text style={[s.cardStatValue, { color: v > 0 ? colors.error : colors.success }]}>
                   {v >= 0 ? '+' : ''}{fmtMoney(v)}
                 </Text>
               </View>
@@ -157,23 +158,23 @@ export default function MileageCostsScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingTop: 20, paddingBottom: 40 },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
-  period: { fontSize: 11, color: '#555', letterSpacing: 1, marginBottom: 20 },
-  row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  statCard: { flex: 1, backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', padding: 14 },
-  statLabel: { fontSize: 9, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 4 },
-  statValue: { fontSize: 20, fontWeight: '900', color: '#f5a623' },
-  sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginTop: 20, marginBottom: 12 },
-  card: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, borderLeftColor: '#3b8cf7', padding: 16, marginBottom: 10 },
-  cardName: { fontSize: 14, fontWeight: '800', color: '#fff', marginBottom: 12 },
-  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.xl, paddingTop: spacing.xl, paddingBottom: spacing.xxxxl },
+  center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
+  period: { ...typography.captionSm, color: colors.textTertiary, letterSpacing: 1, marginBottom: spacing.xl },
+  row: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
+  statCard: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.lg },
+  statLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 2, marginBottom: spacing.xs },
+  statValue: { fontSize: 20, fontWeight: '900', color: colors.primary },
+  sectionTitle: { ...typography.label, color: colors.textMuted, marginTop: spacing.xl, marginBottom: spacing.md },
+  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: colors.info, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md },
+  cardName: { ...typography.body, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md },
+  flyBadge: { fontSize: 12, fontWeight: '700', color: colors.primary },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between' },
   cardStat: {},
-  cardStatLabel: { fontSize: 9, color: '#555', letterSpacing: 1.5, fontWeight: '700', marginBottom: 2 },
-  cardStatValue: { fontSize: 14, fontWeight: '800', color: '#ccc' },
-  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
-  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
+  cardStatLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 1.5, marginBottom: spacing.xs },
+  cardStatValue: { ...typography.body, fontWeight: '800', color: colors.textSecondary },
+  errorText: { color: colors.textTertiary, fontSize: 14, marginBottom: spacing.lg },
+  retryBtn: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: spacing.xxl, paddingVertical: spacing.md },
+  retryText: { color: colors.primary, fontSize: 12, letterSpacing: 2, fontWeight: '700' },
 });

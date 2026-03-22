@@ -6,7 +6,9 @@
       "Bash(node -e \"console.log\\(require.resolve\\(''babel-preset-expo''\\)\\)\")",
       "Bash(node -e \"const jest = require\\(''jest''\\); console.log\\(jest.getVersion\\(\\)\\)\")",
       "Bash(node -e \"const m = require\\(''@react-native-async-storage/async-storage/jest/async-storage-mock''\\); console.log\\(typeof m, typeof m.default, typeof m.clear, Object.keys\\(m\\).slice\\(0,5\\)\\)\")",
-      "Bash(node -e \"const pkg = require\\(''./node_modules/expo/package.json''\\); const deps = {...\\(pkg.dependencies||{}\\), ...\\(pkg.peerDependencies||{}\\)}; console.log\\(deps[''react-native-safe-area-context'']\\)\")"
+      "Bash(node -e \"const pkg = require\\(''./node_modules/expo/package.json''\\); const deps = {...\\(pkg.dependencies||{}\\), ...\\(pkg.peerDependencies||{}\\)}; console.log\\(deps[''react-native-safe-area-context'']\\)\")",
+      "Bash(ls -la /c/Users/Cameron/DriverPayApp2/*.js)",
+      "Bash(npx expo:*)"
     ]
   }
 }

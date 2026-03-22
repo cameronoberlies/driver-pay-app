@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { colors, spacing, radius } from '../lib/theme';
 
 const API_KEY = 'pk.ad8425665c12e1b7f5d7827258d59077';
 
@@ -78,10 +79,10 @@ export default function CityAutocomplete({ value, onChangeText, placeholder, sty
 const s = StyleSheet.create({
   wrapper: { position: 'relative', zIndex: 10 },
   dropdown: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    borderRadius: 4,
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
     marginTop: 2,
     overflow: 'hidden',
   },
@@ -89,11 +90,11 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#222',
+    borderBottomColor: colors.border,
   },
-  suggestionCity: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  suggestionState: { fontSize: 12, color: '#888' },
+  suggestionCity: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
+  suggestionState: { fontSize: 12, color: colors.textSecondary },
 });

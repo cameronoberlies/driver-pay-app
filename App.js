@@ -17,6 +17,7 @@ import {
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { supabase } from "./lib/supabase";
+import { colors, spacing, radius, typography } from "./lib/theme";
 import LoginScreen from "./screens/LoginScreen";
 import DriverDashboard from "./screens/DriverDashboard";
 import MyTripsScreen from "./screens/MyTripsScreen";
@@ -347,7 +348,7 @@ export default function App() {
   if (loading || (session && !activeTab))
     return (
       <View style={styles.loader}>
-        <ActivityIndicator color="#f5a623" size="large" />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
 
@@ -411,84 +412,84 @@ export default function App() {
 const styles = StyleSheet.create({
   loader: {
     flex: 1,
-    backgroundColor: "#0a0a0a",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
-  app: { flex: 1, backgroundColor: "#0a0a0a" },
+  app: { flex: 1, backgroundColor: colors.bg },
   screen: { flex: 1 },
   adminBar: {
     paddingTop: 60,
-    paddingBottom: 14,
-    paddingHorizontal: 20,
-    backgroundColor: "#0a0a0a",
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+    borderBottomColor: colors.border,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   adminBarTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#fff",
-    letterSpacing: 2,
+    ...typography.label,
+    color: colors.textPrimary,
   },
-  adminBarRight: { flexDirection: "row", alignItems: "center", gap: 14 },
+  adminBarRight: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
   signOutBtn: {
     borderWidth: 1,
-    borderColor: "#2a2a2a",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   signOutText: {
-    fontSize: 9,
-    color: "#555",
-    letterSpacing: 1.5,
-    fontWeight: "700",
+    ...typography.labelSm,
+    color: colors.textTertiary,
   },
-  hamburger: { gap: 5, padding: 4 },
-  line: { width: 22, height: 2, backgroundColor: "#f5a623" },
+  hamburger: { gap: spacing.xs, padding: spacing.xs },
+  line: { width: 22, height: 2, backgroundColor: colors.primary },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   drawer: {
-    backgroundColor: "#111",
-    borderTopWidth: 1,
-    borderTopColor: "#222",
-    paddingTop: 28,
-    paddingBottom: 52,
-    paddingHorizontal: 28,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderRadius: radius.md,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xxxxl,
+    paddingHorizontal: spacing.xxl,
   },
   drawerHeading: {
-    fontSize: 10,
-    color: "#444",
+    ...typography.label,
+    color: colors.textMuted,
     letterSpacing: 3,
-    fontWeight: "700",
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   drawerRow: {
-    paddingVertical: 18,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+    borderBottomColor: colors.border,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   drawerRowActive: {},
-  drawerLabel: { fontSize: 20, fontWeight: "700", color: "#555" },
-  drawerLabelActive: { color: "#f5a623" },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#f5a623" },
+  drawerLabel: { fontSize: 20, fontWeight: "700", color: colors.textTertiary },
+  drawerLabelActive: { color: colors.primary },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
   tabBar: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: "#1a1a1a",
-    backgroundColor: "#0a0a0a",
+    borderTopColor: colors.border,
+    backgroundColor: colors.bg,
   },
-  tab: { flex: 1, paddingVertical: 16, alignItems: "center" },
-  tabActive: { borderTopWidth: 2, borderTopColor: "#f5a623" },
-  tabText: { fontSize: 11, color: "#444", letterSpacing: 2, fontWeight: "700" },
-  tabTextActive: { color: "#f5a623" },
+  tab: { flex: 1, paddingVertical: spacing.lg, alignItems: "center" },
+  tabActive: { borderTopWidth: 2, borderTopColor: colors.primary },
+  tabText: {
+    ...typography.labelSm,
+    color: colors.textMuted,
+  },
+  tabTextActive: { color: colors.primary },
 });

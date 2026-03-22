@@ -7,6 +7,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
 import { getDistanceMiles, formatDuration } from '../lib/utils';
+import { colors, spacing, radius, typography, components } from '../lib/theme';
 
 const LOCATION_TASK = 'background-location-task';
 const TIMEOUT_MS = 8000;
@@ -136,10 +137,10 @@ function withTimeout(promise, ms) {
 }
 
 function statusColor(status) {
-  if (status === 'pending') return '#3b8cf7';
-  if (status === 'in_progress') return '#f5a623';
-  if (status === 'completed') return '#4caf50';
-  return '#444';
+  if (status === 'pending') return colors.info;
+  if (status === 'in_progress') return colors.primary;
+  if (status === 'completed') return colors.success;
+  return colors.textMuted;
 }
 
 function statusLabel(status) {
@@ -480,7 +481,7 @@ export default function MyTripsScreen({ session }) {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   if (error) return (
     <View style={s.center}>
@@ -498,7 +499,7 @@ export default function MyTripsScreen({ session }) {
     <ScrollView
       style={s.container}
       contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
       {activeTrips.length === 0 && completedTrips.length === 0 && (
         <View style={s.empty}>
@@ -543,42 +544,48 @@ export default function MyTripsScreen({ session }) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingTop: 60, paddingBottom: 48 },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
-  sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginBottom: 10, marginTop: 4 },
+  container: { ...components.screen },
+  content: { padding: spacing.xl, paddingTop: 60, paddingBottom: spacing.xxxxl },
+  center: { ...components.center },
+  sectionTitle: { ...components.sectionTitle },
 
   card: {
-    backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e',
-    borderLeftWidth: 3, padding: 16, marginBottom: 12,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderLeftWidth: 3, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md,
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.sm },
   cardHeaderLeft: { flex: 1 },
-  cardCrm: { fontSize: 12, color: '#555', letterSpacing: 1, fontWeight: '700', marginBottom: 2 },
-  cardCity: { fontSize: 20, fontWeight: '900', color: '#fff' },
-  statusBadge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8 },
-  statusText: { fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
+  cardCrm: { ...typography.caption, color: colors.textTertiary, letterSpacing: 1, marginBottom: 2 },
+  cardCity: { ...typography.displaySm, fontSize: 20, color: colors.textPrimary },
+  statusBadge: { borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, marginLeft: spacing.sm },
+  statusText: { ...typography.labelSm, letterSpacing: 1.5 },
 
-  cardMeta: { flexDirection: 'row', gap: 16, marginBottom: 8 },
-  metaItem: { fontSize: 11, color: '#555' },
-  notes: { fontSize: 12, color: '#666', fontStyle: 'italic', marginBottom: 8, marginTop: 4 },
+  cardMeta: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.sm },
+  metaItem: { ...typography.captionSm, color: colors.textTertiary },
+  notes: { ...typography.bodySm, fontSize: 12, color: colors.textTertiary, fontStyle: 'italic', marginBottom: spacing.sm, marginTop: spacing.xs },
 
-  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 4 },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50' },
-  liveText: { fontSize: 10, color: '#4caf50', letterSpacing: 2, fontWeight: '700' },
-  liveMiles: { fontSize: 12, color: '#888', marginLeft: 4 },
+  liveRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    marginTop: spacing.sm, marginBottom: spacing.xs,
+    backgroundColor: colors.successDim, borderRadius: radius.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderWidth: 1, borderColor: colors.successBorder,
+  },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
+  liveText: { ...typography.labelSm, fontSize: 10, color: colors.success, letterSpacing: 2 },
+  liveMiles: { ...typography.caption, color: colors.textSecondary, marginLeft: spacing.xs },
 
-  startBtn: { backgroundColor: '#f5a623', padding: 14, alignItems: 'center', marginTop: 12 },
-  startBtnText: { color: '#0a0a0a', fontWeight: '900', fontSize: 13, letterSpacing: 2 },
-  endBtn: { borderWidth: 2, borderColor: '#e05252', padding: 14, alignItems: 'center', marginTop: 12 },
-  endBtnText: { color: '#e05252', fontWeight: '900', fontSize: 13, letterSpacing: 2 },
-  waitingText: { fontSize: 11, color: '#444', fontStyle: 'italic', marginTop: 10, textAlign: 'center' },
+  startBtn: { backgroundColor: colors.primary, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
+  startBtnText: { color: colors.bg, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  endBtn: { borderWidth: 2, borderColor: colors.error, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
+  endBtnText: { color: colors.error, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  waitingText: { ...typography.captionSm, color: colors.textMuted, fontStyle: 'italic', marginTop: spacing.md, textAlign: 'center' },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
-  emptyTitle: { fontSize: 16, fontWeight: '900', color: '#333', letterSpacing: 2, marginBottom: 8 },
-  emptySub: { fontSize: 12, color: '#444' },
+  emptyTitle: { ...typography.h3, fontSize: 16, fontWeight: '900', color: colors.textMuted, letterSpacing: 2, marginBottom: spacing.sm },
+  emptySub: { ...typography.bodySm, fontSize: 12, color: colors.textTertiary },
 
-  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
-  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
+  errorText: { ...components.errorText },
+  retryBtn: { ...components.retryBtn },
+  retryText: { ...components.retryText },
 });

@@ -15,14 +15,15 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography, components } from '../lib/theme';
 import CityAutocomplete from '../components/CityAutocomplete';
 
 // Trip status colors
 const STATUS_COLORS = {
-  pending: '#3b8cf7',
-  in_progress: '#f5a623',
-  completed: '#4caf50',
-  finalized: '#6b7585',
+  pending: colors.info,
+  in_progress: colors.primary,
+  completed: colors.success,
+  finalized: colors.textTertiary,
 };
 
 export default function AdminTripsScreen() {
@@ -87,7 +88,7 @@ export default function AdminTripsScreen() {
   if (loading && !refreshing) {
     return (
       <View style={s.container}>
-        <ActivityIndicator size="large" color="#f5a623" style={{ marginTop: 100 }} />
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 100 }} />
       </View>
     );
   }
@@ -456,7 +457,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <CityAutocomplete
             style={s.input}
             placeholder="Columbus, OH"
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.city}
             onChangeText={(text) => set('city', text)}
           />
@@ -467,7 +468,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <TextInput
             style={s.input}
             placeholder="AB123"
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.crm_id}
             onChangeText={(text) => set('crm_id', text)}
           />
@@ -533,7 +534,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <TextInput
             style={s.input}
             placeholder="https://..."
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.carpage_link}
             onChangeText={(text) => set('carpage_link', text)}
             autoCapitalize="none"
@@ -545,7 +546,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <TextInput
             style={[s.input, { height: 80 }]}
             placeholder="Flight info, seller contact, etc."
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.notes}
             onChangeText={(text) => set('notes', text)}
             multiline
@@ -705,7 +706,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.00"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.pay}
                 onChangeText={(text) => set('pay', text)}
@@ -718,7 +719,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
                 <TextInput
                   style={s.modalInput}
                   placeholder="0.00"
-                  placeholderTextColor="#6b7585"
+                  placeholderTextColor={colors.textTertiary}
                   keyboardType="decimal-pad"
                   value={form.pay2}
                   onChangeText={(text) => set('pay2', text)}
@@ -731,7 +732,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.0"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.hours}
                 onChangeText={(text) => set('hours', text)}
@@ -743,7 +744,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.miles}
                 onChangeText={(text) => set('miles', text)}
@@ -755,7 +756,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.00"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.actual_cost}
                 onChangeText={(text) => set('actual_cost', text)}
@@ -767,7 +768,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.00"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.estimated_cost}
                 onChangeText={(text) => set('estimated_cost', text)}
@@ -812,48 +813,45 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
 // ── STYLES ───────────────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#0d0f12',
+    ...components.screen,
   },
   tabBar: {
     flexDirection: 'row',
-    padding: 16,
-    gap: 12,
+    padding: spacing.lg,
+    gap: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
   },
   tabActive: {
-    backgroundColor: 'rgba(245, 166, 35, 0.1)',
-    borderColor: '#f5a623',
+    backgroundColor: colors.primaryDim,
+    borderColor: colors.primary,
   },
   tabText: {
-    fontSize: 11,
-    fontWeight: '700',
+    ...typography.captionSm,
     letterSpacing: 1,
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   tabTextActive: {
-    color: '#f5a623',
+    color: colors.primary,
   },
   createBtn: {
     marginLeft: 'auto',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#f5a623',
-    borderRadius: 4,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
   },
   createBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
+    ...typography.captionSm,
     letterSpacing: 1,
-    color: '#0d0f12',
+    color: colors.bg,
   },
   scrollView: {
     flex: 1,
@@ -862,240 +860,236 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
+    ...typography.caption,
     letterSpacing: 1.5,
-    color: '#f5a623',
+    color: colors.primary,
   },
   sectionCount: {
-    fontSize: 11,
-    color: '#6b7585',
+    ...typography.captionSm,
+    color: colors.textTertiary,
   },
   // CARD LAYOUT
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 8,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
   },
   cardTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
+    marginBottom: spacing.md,
+    gap: spacing.md,
   },
   statusBadge: {
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
   },
   statusText: {
-    fontSize: 9,
-    fontWeight: '700',
+    ...typography.labelSm,
     letterSpacing: 0.5,
   },
   crmId: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: '700',
-    color: '#f5a623',
+    color: colors.primary,
     letterSpacing: 0.5,
   },
   tripType: {
-    fontSize: 11,
-    color: '#6b7585',
+    ...typography.captionSm,
+    color: colors.textTertiary,
     marginLeft: 'auto',
   },
   cardMain: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   cardLeft: {
     flex: 1,
   },
   cityText: {
-    fontSize: 16,
+    ...typography.h3,
     fontWeight: '600',
-    color: '#d4d8df',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   pickupText: {
-    fontSize: 12,
-    color: '#6b7585',
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   driversRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   driverLabel: {
-    fontSize: 13,
-    color: '#d4d8df',
+    ...typography.bodySm,
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   driverLabel2: {
-    fontSize: 13,
-    color: '#6b7585',
+    ...typography.bodySm,
+    color: colors.textTertiary,
     fontWeight: '500',
   },
   flyBadge: {
-    color: '#f5a623',
+    color: colors.primary,
     fontSize: 11,
   },
   notesText: {
-    fontSize: 12,
-    color: '#6b7585',
-    marginTop: 12,
-    paddingTop: 12,
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#1a1d24',
+    borderTopColor: colors.border,
     fontStyle: 'italic',
   },
   emptyState: {
-    padding: 60,
+    padding: spacing.xxxxl + 12,
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 13,
-    color: '#6b7585',
+    ...typography.bodySm,
+    color: colors.textTertiary,
   },
   // Create form styles
   createContainer: {
-    flex: 1,
-    backgroundColor: '#0d0f12',
+    ...components.screen,
   },
   createHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
+    padding: spacing.lg,
+    gap: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   backBtn: {
-    padding: 8,
+    padding: spacing.sm,
   },
   backText: {
-    fontSize: 14,
-    color: '#f5a623',
+    ...typography.body,
+    color: colors.primary,
     fontWeight: '600',
   },
   createTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#d4d8df',
+    ...typography.h3,
+    color: colors.textPrimary,
   },
   form: {
-    padding: 16,
+    padding: spacing.lg,
   },
   field: {
-    marginBottom: 20,
+    marginBottom: spacing.xl,
   },
   label: {
-    fontSize: 11,
+    ...typography.captionSm,
     fontWeight: '700',
     letterSpacing: 0.5,
-    color: '#6b7585',
-    marginBottom: 6,
+    color: colors.textTertiary,
+    marginBottom: spacing.sm - 2,
     textTransform: 'uppercase',
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
-    padding: 12,
-    fontSize: 14,
-    color: '#d4d8df',
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    ...typography.body,
+    color: colors.textPrimary,
   },
   driverPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.lg - 2,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
-    marginRight: 8,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    marginRight: spacing.sm,
   },
   driverPillActive: {
-    backgroundColor: 'rgba(245, 166, 35, 0.1)',
-    borderColor: '#f5a623',
+    backgroundColor: colors.primaryDim,
+    borderColor: colors.primary,
   },
   driverPillText: {
-    fontSize: 12,
+    ...typography.caption,
     fontWeight: '600',
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   driverPillTextActive: {
-    color: '#f5a623',
+    color: colors.primary,
   },
   segmentControl: {
     flexDirection: 'row',
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
     overflow: 'hidden',
   },
   segment: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.surface,
   },
   segmentActive: {
-    backgroundColor: '#f5a623',
+    backgroundColor: colors.primary,
   },
   segmentText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '600',
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   segmentTextActive: {
-    color: '#0d0f12',
+    color: colors.bg,
   },
   // Date/Time Picker Styles
   dateTimeRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.md,
   },
   dateTimeButton: {
     flex: 1,
-    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+    backgroundColor: colors.primaryDim,
     borderWidth: 1,
-    borderColor: '#f5a623',
-    borderRadius: 4,
-    padding: 12,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
+    padding: spacing.md,
     alignItems: 'center',
   },
   dateTimeButtonText: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: '600',
-    color: '#f5a623',
+    color: colors.primary,
   },
   errorText: {
-    fontSize: 12,
-    color: '#ef4444',
-    marginBottom: 12,
+    ...typography.caption,
+    color: colors.error,
+    marginBottom: spacing.md,
   },
   createSubmitBtn: {
-    backgroundColor: '#f5a623',
-    paddingVertical: 14,
-    borderRadius: 4,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.lg - 2,
+    borderRadius: radius.sm,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   createSubmitText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '700',
-    color: '#0d0f12',
+    color: colors.bg,
     letterSpacing: 0.5,
   },
   disabled: {
@@ -1104,124 +1098,123 @@ const s = StyleSheet.create({
   // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
-    padding: 20,
+    padding: spacing.xl,
   },
   modalContainer: {
-    backgroundColor: '#1a1d24',
-    borderRadius: 8,
-    padding: 20,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.md,
+    padding: spacing.xl,
     maxWidth: 500,
     width: '100%',
     alignSelf: 'center',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#d4d8df',
-    marginBottom: 4,
+    ...typography.h2,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   modalSubtitle: {
-    fontSize: 13,
-    color: '#6b7585',
-    marginBottom: 20,
+    ...typography.bodySm,
+    color: colors.textTertiary,
+    marginBottom: spacing.xl,
   },
   modalField: {
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   modalLabel: {
-    fontSize: 11,
+    ...typography.captionSm,
     fontWeight: '700',
     letterSpacing: 0.5,
-    color: '#6b7585',
-    marginBottom: 6,
+    color: colors.textTertiary,
+    marginBottom: spacing.sm - 2,
     textTransform: 'uppercase',
   },
   modalInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#2a2d34',
-    borderRadius: 4,
-    padding: 10,
-    fontSize: 14,
-    color: '#d4d8df',
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
+    padding: spacing.sm + 2,
+    ...typography.body,
+    color: colors.textPrimary,
   },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: spacing.md,
   },
   checkbox: {
     width: 20,
     height: 20,
     borderWidth: 1,
-    borderColor: '#2a2d34',
+    borderColor: colors.borderLight,
     borderRadius: 2,
-    marginRight: 8,
+    marginRight: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxChecked: {
-    backgroundColor: '#ef4444',
-    borderColor: '#ef4444',
+    backgroundColor: colors.error,
+    borderColor: colors.error,
   },
   checkmark: {
-    color: '#fff',
+    color: colors.textPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
   checkboxLabel: {
-    fontSize: 12,
-    color: '#d4d8df',
+    ...typography.caption,
+    color: colors.textPrimary,
   },
   modalError: {
-    fontSize: 12,
-    color: '#ef4444',
-    marginTop: 12,
+    ...typography.caption,
+    color: colors.error,
+    marginTop: spacing.md,
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
+    gap: spacing.md,
+    marginTop: spacing.xl,
   },
   modalBtnCancel: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
     borderWidth: 1,
-    borderColor: '#2a2d34',
-    borderRadius: 4,
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
     alignItems: 'center',
   },
   modalBtnCancelText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '600',
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   modalBtnSave: {
     flex: 1,
-    paddingVertical: 12,
-    backgroundColor: '#f5a623',
-    borderRadius: 4,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
     alignItems: 'center',
   },
   modalBtnSaveText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '700',
-    color: '#0d0f12',
+    color: colors.bg,
   },
   pickerDone: {
     alignSelf: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 32,
-    backgroundColor: '#f5a623',
-    borderRadius: 6,
-    marginTop: 8,
-    marginBottom: 12,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.xxxl,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
   },
   pickerDoneText: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: '700',
-    color: '#0d0f12',
+    color: colors.bg,
   },
 });
