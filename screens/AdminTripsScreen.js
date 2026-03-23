@@ -17,6 +17,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
 import CityAutocomplete from '../components/CityAutocomplete';
+import TripChatScreen from './TripChatScreen';
 
 // Trip status colors
 const STATUS_COLORS = {
@@ -26,7 +27,7 @@ const STATUS_COLORS = {
   finalized: colors.textTertiary,
 };
 
-export default function AdminTripsScreen() {
+export default function AdminTripsScreen({ session }) {
   const [trips, setTrips] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +35,8 @@ export default function AdminTripsScreen() {
   const [view, setView] = useState('active'); // 'active' | 'all' | 'create'
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState({});
+  const [chatTrip, setChatTrip] = useState(null);
 
   // Load trips + profiles
   useEffect(() => {
@@ -72,6 +75,30 @@ export default function AdminTripsScreen() {
 
     setLoading(false);
   }
+
+  async function loadUnreadCounts() {
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (!userId || trips.length === 0) return;
+
+    const { data: messages } = await supabase
+      .from('trip_messages')
+      .select('trip_id, sender_id')
+      .in('trip_id', trips.map(t => t.id));
+
+    if (!messages) return;
+
+    const counts = {};
+    messages.forEach(msg => {
+      if (msg.sender_id !== userId) {
+        counts[msg.trip_id] = (counts[msg.trip_id] || 0) + 1;
+      }
+    });
+    setUnreadCounts(counts);
+  }
+
+  useEffect(() => {
+    if (trips.length > 0) loadUnreadCounts();
+  }, [trips]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -151,12 +178,14 @@ export default function AdminTripsScreen() {
             key={trip.id}
             trip={trip}
             allProfiles={allProfiles}
+            unreadCount={unreadCounts[trip.id] || 0}
             onPress={() => {
               setSelectedTrip(trip);
               if (trip.status === 'completed') {
                 setShowFinalizeModal(true);
               }
             }}
+            onChatPress={(t) => setChatTrip(t)}
           />
         ))}
 
@@ -168,6 +197,20 @@ export default function AdminTripsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Chat Modal */}
+      {chatTrip && (
+        <Modal visible transparent animationType="slide">
+          <TripChatScreen
+            trip={chatTrip}
+            allProfiles={allProfiles}
+            onClose={() => {
+              setChatTrip(null);
+              loadUnreadCounts();
+            }}
+          />
+        </Modal>
+      )}
 
       {/* Finalize Modal */}
       {showFinalizeModal && selectedTrip && (
@@ -190,7 +233,7 @@ export default function AdminTripsScreen() {
 }
 
 // ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────────────────────────
-function TripCard({ trip, allProfiles, onPress }) {
+function TripCard({ trip, allProfiles, onPress, unreadCount, onChatPress }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -257,6 +300,22 @@ function TripCard({ trip, allProfiles, onPress }) {
           {trip.notes}
         </Text>
       )}
+
+      {/* Chat Button */}
+      <View style={s.chatRow}>
+        <TouchableOpacity
+          style={s.chatBtn}
+          onPress={() => onChatPress(trip)}
+          activeOpacity={0.7}
+        >
+          <Text style={s.chatIcon}>💬</Text>
+          {unreadCount > 0 && (
+            <View style={s.chatBadge}>
+              <Text style={s.chatBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -963,6 +1022,47 @@ const s = StyleSheet.create({
   emptyText: {
     ...typography.bodySm,
     color: colors.textTertiary,
+  },
+  // Chat button on trip cards
+  chatRow: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  chatBtn: {
+    position: 'relative',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primaryDim,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chatIcon: {
+    fontSize: 18,
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: colors.error,
+    borderRadius: radius.full,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  chatBadgeText: {
+    ...typography.labelSm,
+    fontSize: 10,
+    color: colors.textPrimary,
   },
   // Create form styles
   createContainer: {

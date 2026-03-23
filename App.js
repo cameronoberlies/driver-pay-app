@@ -35,6 +35,7 @@ import { useUpdateChecker } from "./lib/AndroidUpdateChecker";
 import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
+import TripChatScreen from "./screens/TripChatScreen";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -194,6 +195,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [chatTrip, setChatTrip] = useState(null);
 
   const appState = useRef(AppState.currentState);
   const notificationListener = useRef();
@@ -366,7 +368,7 @@ export default function App() {
       if (activeTab === "availability")
         return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
-      if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
+      if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} session={session} />;
       if (activeTab === "tracking")
         return <AdminTrackingHealthScreen key={refreshKey} />;
       if (activeTab === "geofence")
@@ -377,7 +379,7 @@ export default function App() {
       if (activeTab === "dashboard")
         return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips")
-        return <MyTripsScreen key={refreshKey} session={session} />;
+        return <MyTripsScreen key={refreshKey} session={session} navigation={{ navigate: (screen, params) => { if (screen === 'TripChat') setChatTrip(params); } }} />;
       if (activeTab === "availability")
         return <DriverAvailabilityScreen key={refreshKey} session={session} />;
     }
@@ -402,8 +404,19 @@ export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <View style={styles.app}>
-        <View style={styles.screen}>{renderScreen()}</View>
-        <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
+        {chatTrip ? (
+          <TripChatScreen
+            trip={chatTrip.trip}
+            currentUser={chatTrip.currentUser}
+            allProfiles={chatTrip.allProfiles}
+            onClose={() => setChatTrip(null)}
+          />
+        ) : (
+          <>
+            <View style={styles.screen}>{renderScreen()}</View>
+            <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
+          </>
+        )}
       </View>
     </SafeAreaProvider>
   );

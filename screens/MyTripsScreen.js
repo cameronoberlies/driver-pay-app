@@ -150,7 +150,7 @@ function statusLabel(status) {
   return status.toUpperCase();
 }
 
-function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip }) {
+function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip, unreadCount, onChatPress }) {
   const isDesignated = trip.designated_driver_id === currentUserId;
   const isFlyTrip = trip.trip_type === 'fly';
   const isActive = activeTrip?.id === trip.id;
@@ -213,16 +213,34 @@ function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip }) {
       {activeTrip && !isActive && trip.status === 'pending' && (
         <Text style={s.waitingText}>Another trip is currently active</Text>
       )}
+
+      {/* Chat Button */}
+      <View style={s.chatRow}>
+        <TouchableOpacity
+          style={s.chatBtn}
+          onPress={() => onChatPress(trip)}
+          activeOpacity={0.7}
+        >
+          <Text style={s.chatIcon}>💬</Text>
+          <Text style={s.chatBtnText}>Messages</Text>
+          {unreadCount > 0 && (
+            <View style={s.chatBadge}>
+              <Text style={s.chatBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
-export default function MyTripsScreen({ session }) {
+export default function MyTripsScreen({ session, navigation }) {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [activeTrip, setActiveTrip] = useState(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
 
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
@@ -300,12 +318,35 @@ export default function MyTripsScreen({ session }) {
         }, 1000);
       }
 
+      loadUnreadCounts(data ?? []);
     } catch {
       setError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+  }
+
+  async function loadUnreadCounts(tripList) {
+    const userId = session.user.id;
+    const tripIds = tripList.map(t => t.id);
+    if (tripIds.length === 0) return;
+
+    const { data: messages } = await supabase
+      .from('trip_messages')
+      .select('trip_id, sender_id')
+      .in('trip_id', tripIds);
+
+    if (!messages) return;
+
+    const counts = {};
+    messages.forEach(msg => {
+      if (msg.sender_id !== userId) {
+        counts[msg.trip_id] = (counts[msg.trip_id] || 0) + 1;
+      }
+    });
+
+    setUnreadCounts(counts);
   }
 
   useEffect(() => { load(); }, []);
@@ -519,6 +560,14 @@ export default function MyTripsScreen({ session }) {
               onStart={handleStart}
               onEnd={handleEnd}
               activeTrip={activeTrip}
+              unreadCount={unreadCounts[trip.id] || 0}
+              onChatPress={(selectedTrip) => {
+                navigation.navigate('TripChat', {
+                  trip: selectedTrip,
+                  currentUser: { id: session.user.id, name: 'You' },
+                  allProfiles: [],
+                });
+              }}
             />
           ))}
         </>
@@ -535,6 +584,14 @@ export default function MyTripsScreen({ session }) {
               onStart={handleStart}
               onEnd={handleEnd}
               activeTrip={activeTrip}
+              unreadCount={unreadCounts[trip.id] || 0}
+              onChatPress={(selectedTrip) => {
+                navigation.navigate('TripChat', {
+                  trip: selectedTrip,
+                  currentUser: { id: session.user.id, name: 'You' },
+                  allProfiles: [],
+                });
+              }}
             />
           ))}
         </>
@@ -588,4 +645,51 @@ const s = StyleSheet.create({
   errorText: { ...components.errorText },
   retryBtn: { ...components.retryBtn },
   retryText: { ...components.retryText },
+
+  chatRow: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1e1e1e',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  chatBtn: {
+    position: 'relative',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+    borderWidth: 1,
+    borderColor: '#f5a623',
+    borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatIcon: {
+    fontSize: 16,
+  },
+  chatBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f5a623',
+    letterSpacing: 1,
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  chatBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
 });
