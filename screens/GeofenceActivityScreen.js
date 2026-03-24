@@ -8,8 +8,10 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 export default function GeofenceActivityScreen() {
+  const { isTablet } = useResponsive();
   const [events, setEvents] = useState([]);
   const [profiles, setProfiles] = useState({});
   const [loading, setLoading] = useState(true);
@@ -91,9 +93,9 @@ export default function GeofenceActivityScreen() {
   const earlierEvents = events.filter(e => new Date(e.created_at) < todayStart);
 
   return (
-    <ScrollView 
+    <ScrollView
       style={s.container}
-      contentContainerStyle={s.content}
+      contentContainerStyle={[s.content, isTablet && { alignSelf: 'center', maxWidth: 700, width: '100%' }]}
       refreshControl={
         <RefreshControl 
           refreshing={refreshing} 

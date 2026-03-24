@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Dimensions,
+  View, Text, StyleSheet, ScrollView,
   RefreshControl, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import { supabase } from '../lib/supabase';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
+import useResponsive from '../lib/useResponsive';
 
 function getWeekBounds(weeksAgo = 0) {
   const d = new Date();
@@ -46,6 +45,8 @@ const chartConfig = {
 };
 
 export default function MileageCostsScreen() {
+  const { width } = useResponsive();
+  const chartWidth = Math.min(width - 40, 660);
   const [entries, setEntries] = useState([]);
   const [trips, setTrips] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -189,7 +190,7 @@ export default function MileageCostsScreen() {
   );
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.content}
+    <ScrollView style={s.container} contentContainerStyle={[s.content, { maxWidth: 700, alignSelf: 'center', width: '100%' }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}>
 
       {/* Header */}
@@ -257,7 +258,7 @@ export default function MileageCostsScreen() {
             <Text style={s.chartTitle}>Cost Variance Trend (8 Weeks)</Text>
             <LineChart
               data={varianceTrendData}
-              width={SCREEN_WIDTH - 40}
+              width={chartWidth}
               height={220}
               chartConfig={chartConfig}
               bezier
@@ -276,7 +277,7 @@ export default function MileageCostsScreen() {
             <Text style={s.chartTitle}>Miles per Driver (This Week)</Text>
             <BarChart
               data={milesPerDriverData}
-              width={SCREEN_WIDTH - 40}
+              width={chartWidth}
               height={220}
               chartConfig={chartConfig}
               style={s.chart}
@@ -322,7 +323,7 @@ export default function MileageCostsScreen() {
             <Text style={s.chartTitle}>Trip Type Breakdown (This Week)</Text>
             <PieChart
               data={tripTypeData}
-              width={SCREEN_WIDTH - 40}
+              width={chartWidth}
               height={220}
               chartConfig={chartConfig}
               accessor="population"

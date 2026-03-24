@@ -11,8 +11,10 @@ import {
 import { flightAPI } from "../lib/flightAPI";
 import FlightDetailsModal from "./FlightDetailsModal";
 import { colors, spacing, radius, typography } from "../lib/theme";
+import useResponsive from "../lib/useResponsive";
 
 export default function LiveFlightsScreen() {
+  const { isTablet } = useResponsive();
   const [flights, setFlights] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -84,6 +86,7 @@ export default function LiveFlightsScreen() {
   return (
     <ScrollView
       style={styles.container}
+      contentContainerStyle={isTablet ? { alignSelf: 'center', maxWidth: 700, width: '100%' } : undefined}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -106,6 +109,7 @@ export default function LiveFlightsScreen() {
           status={status}
           flights={statusFlights}
           expanded={expandedSections[status]}
+          isTablet={isTablet}
           onToggle={() => toggleSection(status)}
           onFlightPress={(flight) => {
             setSelectedFlight(flight);
@@ -132,7 +136,7 @@ export default function LiveFlightsScreen() {
   );
 }
 
-function FlightGroup({ status, flights, expanded, onToggle, onFlightPress }) {
+function FlightGroup({ status, flights, expanded, isTablet, onToggle, onFlightPress }) {
   if (flights.length === 0) return null;
 
   const statusConfig = {
@@ -153,15 +157,19 @@ function FlightGroup({ status, flights, expanded, onToggle, onFlightPress }) {
         <Text style={styles.expandIcon}>{expanded ? "▼" : "▶"}</Text>
       </TouchableOpacity>
 
-      {expanded &&
-        flights.map((flight) => (
+      {expanded && (
+        <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
+        {flights.map((flight) => (
           <TouchableOpacity
             key={flight.id}
+            style={isTablet ? { width: '48.5%' } : undefined}
             onPress={() => onFlightPress(flight)}
           >
             <FlightCard flight={flight} statusColor={config.color} />
           </TouchableOpacity>
         ))}
+        </View>
+      )}
     </View>
   );
 }

@@ -8,6 +8,7 @@ import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
 import { getDistanceMiles, formatDuration } from '../lib/utils';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 const LOCATION_TASK = 'background-location-task';
 const TIMEOUT_MS = 8000;
@@ -235,6 +236,7 @@ function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip, unreadCount
 }
 
 export default function MyTripsScreen({ session, navigation }) {
+  const { isTablet } = useResponsive();
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -539,7 +541,7 @@ export default function MyTripsScreen({ session, navigation }) {
   return (
     <ScrollView
       style={s.container}
-      contentContainerStyle={s.content}
+      contentContainerStyle={[s.content, { maxWidth: 700, alignSelf: 'center', width: '100%' }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
       {activeTrips.length === 0 && completedTrips.length === 0 && (

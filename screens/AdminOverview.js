@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 function getWeekBounds() {
   const d = new Date();
@@ -151,6 +152,7 @@ function DriverModal({ driver, entries, visible, onClose }) {
 }
 
 export default function AdminOverview() {
+  const { isTablet } = useResponsive();
   const [drivers, setDrivers] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -202,7 +204,7 @@ export default function AdminOverview() {
 
   return (
     <>
-      <ScrollView style={s.container} contentContainerStyle={s.content}
+      <ScrollView style={s.container} contentContainerStyle={[s.content, isTablet && { alignSelf: 'center', maxWidth: 700, width: '100%' }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
         <Text style={s.period}>
@@ -225,6 +227,7 @@ export default function AdminOverview() {
 
         <Text style={s.sectionTitle}>THIS WEEK</Text>
 
+        <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
         {drivers.map(driver => {
           const driverEntries = entries.filter(e => e.driver_id === driver.id);
           const wk = driverEntries.filter(e => {
@@ -236,7 +239,7 @@ export default function AdminOverview() {
           const monthTrips = driverEntries.filter(e => e.date.slice(0, 7) === thisMonth).length;
 
           return (
-            <TouchableOpacity key={driver.id} style={s.card} onPress={() => setSelectedDriver(driver)}>
+            <TouchableOpacity key={driver.id} style={[s.card, isTablet && { width: '48.5%' }]} onPress={() => setSelectedDriver(driver)}>
               <View style={s.cardLeft}>
                 <Text style={s.driverName}>
                   {driver.name}
@@ -253,6 +256,7 @@ export default function AdminOverview() {
             </TouchableOpacity>
           );
         })}
+        </View>
 
         {drivers.length === 0 && <Text style={s.empty}>No drivers found.</Text>}
       </ScrollView>

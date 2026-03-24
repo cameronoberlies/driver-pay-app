@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -17,6 +18,7 @@ function withTimeout(promise, ms) {
 }
 
 export default function AvailabilityScreen() {
+  const { isTablet } = useResponsive();
   const [availability, setAvailability] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +70,7 @@ export default function AvailabilityScreen() {
   const noTable = availability === null;
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.content}
+    <ScrollView style={s.container} contentContainerStyle={[s.content, isTablet && { alignSelf: 'center', maxWidth: 700, width: '100%' }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
       {noTable ? (
@@ -80,6 +82,7 @@ export default function AvailabilityScreen() {
       ) : (
         <>
           <Text style={s.sectionTitle}>DRIVER AVAILABILITY</Text>
+          <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
           {profiles.map(driver => {
             const driverAvail = DAYS.map(day => {
               const record = availability.find(a => a.driver_id === driver.id && a.day === day);
@@ -87,7 +90,7 @@ export default function AvailabilityScreen() {
             });
 
             return (
-              <View key={driver.id} style={s.card}>
+              <View key={driver.id} style={[s.card, isTablet && { width: '48.5%' }]}>
                 <Text style={s.driverName}>
                   {driver.name}
                   {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
@@ -112,6 +115,7 @@ export default function AvailabilityScreen() {
               </View>
             );
           })}
+          </View>
 
           {availability.length === 0 && (
             <Text style={s.empty}>No availability submitted yet. Drivers set their availability from the app.</Text>

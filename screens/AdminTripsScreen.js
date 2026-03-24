@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
 import CityAutocomplete from '../components/CityAutocomplete';
 import TripChatScreen from './TripChatScreen';
+import useResponsive from '../lib/useResponsive';
 
 // Trip status colors
 const STATUS_COLORS = {
@@ -28,6 +29,7 @@ const STATUS_COLORS = {
 };
 
 export default function AdminTripsScreen({ session }) {
+  const { isTablet } = useResponsive();
   const [trips, setTrips] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -191,16 +193,19 @@ export default function AdminTripsScreen({ session }) {
       {/* Trips List - CARD LAYOUT */}
       <ScrollView
         style={s.scrollView}
+        contentContainerStyle={isTablet ? { alignSelf: 'center', maxWidth: 700, width: '100%' } : undefined}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
+        <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
         {displayedTrips.map((trip) => (
           <TripCard
             key={trip.id}
             trip={trip}
             allProfiles={allProfiles}
             unreadCount={unreadCounts[trip.id] || 0}
+            isTablet={isTablet}
             onPress={() => {
               setSelectedTrip(trip);
               if (trip.status === 'completed') {
@@ -211,6 +216,7 @@ export default function AdminTripsScreen({ session }) {
             onDelete={handleDeleteTrip}
           />
         ))}
+        </View>
 
         {displayedTrips.length === 0 && (
           <View style={s.emptyState}>
@@ -256,7 +262,7 @@ export default function AdminTripsScreen({ session }) {
 }
 
 // ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────────────────────────
-function TripCard({ trip, allProfiles, onPress, unreadCount, onChatPress, onDelete }) {
+function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPress, onDelete }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -277,7 +283,7 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, onChatPress, onDele
     : null;
 
   return (
-    <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[s.card, isTablet && { width: '48.5%' }]} onPress={onPress} activeOpacity={0.7}>
       {/* Top Row: Status + CRM + Type */}
       <View style={s.cardTop}>
         <View style={[s.statusBadge, { borderColor: statusColor, backgroundColor: `${statusColor}15` }]}>

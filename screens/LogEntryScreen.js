@@ -7,6 +7,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
 import CityAutocomplete from '../components/CityAutocomplete';
+import useResponsive from '../lib/useResponsive';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 function formatDate(dateStr) {
@@ -122,6 +123,7 @@ function PendingRow({ entry, driverName, driverWillingToFly, onComplete }) {
 }
 
 export default function LogEntryScreen() {
+  const { isTablet } = useResponsive();
   const [drivers, setDrivers] = useState([]);
   const [pending, setPending] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -213,7 +215,7 @@ export default function LogEntryScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
-    <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+    <ScrollView style={s.container} contentContainerStyle={[s.content, isTablet && { alignSelf: 'center', maxWidth: 700, width: '100%' }]} keyboardShouldPersistTaps="handled">
 
       {pending.length > 0 && (
         <View style={s.pendingSection}>

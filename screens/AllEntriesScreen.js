@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 function fmtDate(d) { const [y,m,day] = d.split('-'); return `${m}/${day}/${y}`; }
 function fmtMoney(n) { return '$' + Number(n||0).toLocaleString('en-US', { minimumFractionDigits: 2 }); }
@@ -53,6 +54,7 @@ function getDateRangeLabel(rangeId) {
 }
 
 export default function AllEntriesScreen() {
+  const { isTablet } = useResponsive();
   const [entries, setEntries] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -156,6 +158,7 @@ export default function AllEntriesScreen() {
 
   return (
     <View style={s.container}>
+      <View style={isTablet ? { alignSelf: 'center', maxWidth: 700, width: '100%', flex: 1 } : { flex: 1 }}>
       {/* Top bar: search + filter button */}
       <View style={s.topBar}>
         <TextInput
@@ -220,10 +223,13 @@ export default function AllEntriesScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}
         contentContainerStyle={s.list}
         ListEmptyComponent={<Text style={s.empty}>No entries match your filters.</Text>}
+        numColumns={isTablet ? 2 : 1}
+        key={isTablet ? 'tablet' : 'phone'}
+        columnWrapperStyle={isTablet ? { gap: 10 } : undefined}
         renderItem={({ item: e }) => {
           const driver = profiles.find(p => p.id === e.driver_id);
           return (
-            <View style={s.card}>
+            <View style={[s.card, isTablet && { width: '48.5%' }]}>
               <View style={s.cardTop}>
                 <Text style={s.driverName}>
                   {driver?.name ?? '—'}
@@ -250,6 +256,8 @@ export default function AllEntriesScreen() {
           );
         }}
       />
+
+      </View>
 
       {/* Filter Modal */}
       <Modal visible={showFilters} transparent animationType="slide" onRequestClose={() => setShowFilters(false)}>

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -28,6 +29,7 @@ function getNextWeekLabel() {
 }
 
 export default function DriverAvailabilityScreen({ session }) {
+  const { isTablet } = useResponsive();
   const weekStart = getNextWeekStart().toISOString().slice(0, 10);
 
   const emptyAvail = {
@@ -123,7 +125,7 @@ export default function DriverAvailabilityScreen({ session }) {
 
   return (
     <View style={s.container}>
-    <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={[s.content, { maxWidth: 500, alignSelf: 'center', width: '100%' }]} showsVerticalScrollIndicator={false}>
       {/* Header */}
       <View style={{ marginBottom: spacing.xxxl, alignItems: 'center' }}>
         <Text style={s.heading}>AVAILABILITY</Text>

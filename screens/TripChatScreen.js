@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography } from '../lib/theme';
 
+
 export default function TripChatScreen({ trip, allProfiles, onClose }) {
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState('');
@@ -224,6 +225,7 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
       behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
+      <View style={{ flex: 1, maxWidth: 600, alignSelf: 'center', width: '100%' }}>
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={onClose} style={s.backBtn}>
@@ -288,6 +290,7 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
         >
           <Text style={s.sendBtnText}>{sending ? '...' : '→'}</Text>
         </TouchableOpacity>
+      </View>
       </View>
     </KeyboardAvoidingView>
   );

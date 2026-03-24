@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 export default function AdminTrackingHealthScreen() {
+  const { isTablet } = useResponsive();
   const [locations, setLocations] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [trips, setTrips] = useState([]);
@@ -74,6 +76,7 @@ export default function AdminTrackingHealthScreen() {
 
       <ScrollView
         style={s.scrollView}
+        contentContainerStyle={isTablet ? { alignSelf: 'center', maxWidth: 700, width: '100%' } : undefined}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }

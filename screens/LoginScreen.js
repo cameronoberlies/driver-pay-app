@@ -12,8 +12,10 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 export default function LoginScreen() {
+  const { isTablet } = useResponsive();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,7 +76,7 @@ export default function LoginScreen() {
           <Text style={styles.logoSub}>Driver Portal</Text>
         </View>
 
-        <View style={styles.form}>
+        <View style={[styles.form, isTablet && { maxWidth: 450, alignSelf: 'center', width: '100%' }]}>
           {resetMode && (
             <Text style={styles.resetInfo}>
               Enter your email address and we'll send you a link to reset your

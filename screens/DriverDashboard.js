@@ -16,10 +16,12 @@ import { getWeekBounds, getMonthBounds, withTimeout } from "../lib/utils";
 import { colors, spacing, radius, typography, components } from "../lib/theme";
 import UpcomingFlightCard from "../components/UpcomingFlightCard";
 import DriverPhoneBookModal from '../components/DriverPhoneBookModal';
+import useResponsive from '../lib/useResponsive';
 
 const TIMEOUT_MS = 8000;
 
 export default function DriverDashboard({ session }) {
+  const { isTablet } = useResponsive();
   const [profile, setProfile] = useState(null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +121,7 @@ export default function DriverDashboard({ session }) {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { maxWidth: 700, alignSelf: 'center', width: '100%' }]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
