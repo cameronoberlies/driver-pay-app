@@ -9,8 +9,11 @@ import {
   Platform,
   ActivityIndicator,
   FlatList,
+  Image,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography } from '../lib/theme';
 
@@ -69,33 +72,87 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
     setLoading(false);
   }
 
-  async function handleSend() {
-    if (!messageText.trim() || sending) return;
+  async function handleSend(imageUrl) {
+    const hasText = messageText.trim();
+    if (!hasText && !imageUrl) return;
+    if (sending) return;
 
     setSending(true);
-    const text = messageText.trim();
-    setMessageText('');
+    const text = hasText ? messageText.trim() : null;
+    if (hasText) setMessageText('');
 
     const { data, error } = await supabase.from('trip_messages').insert({
       trip_id: trip.id,
       sender_id: currentUserId,
-      content: text,
+      content: text || (imageUrl ? '📷 Photo' : ''),
+      image_url: imageUrl || null,
     }).select().single();
 
     if (error) {
       console.error('Error sending message:', error);
-      setMessageText(text);
+      if (text) setMessageText(text);
     } else if (data) {
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
         return [...prev, data];
       });
-      // Trigger push notification (fire and forget)
       supabase.functions.invoke('notify-trip-message', {
         body: { message_id: data.id },
       }).catch(() => {});
     }
     setSending(false);
+  }
+
+  async function handlePickImage() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Photo library access is needed to send images.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.6,
+      allowsEditing: false,
+    });
+
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    setSending(true);
+
+    try {
+      const ext = asset.uri.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${trip.id}/${Date.now()}.${ext}`;
+
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const arrayBuffer = await new Response(blob).arrayBuffer();
+
+      const { error: uploadError } = await supabase.storage
+        .from('trip-attachments')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        Alert.alert('Upload Failed', uploadError.message);
+        setSending(false);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('trip-attachments')
+        .getPublicUrl(fileName);
+
+      await handleSend(urlData.publicUrl);
+    } catch (e) {
+      console.error('Image send error:', e);
+      Alert.alert('Error', 'Failed to send image.');
+      setSending(false);
+    }
   }
 
   function getSenderName(senderId) {
@@ -141,9 +198,18 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
           {!isMe && (
             <Text style={s.senderName}>{getSenderName(item.sender_id)}</Text>
           )}
-          <Text style={[s.messageText, !isMe && s.theirMessageText]}>
-            {item.content}
-          </Text>
+          {item.image_url && (
+            <Image
+              source={{ uri: item.image_url }}
+              style={s.messageImage}
+              resizeMode="cover"
+            />
+          )}
+          {item.content && item.content !== '📷 Photo' && (
+            <Text style={[s.messageText, !isMe && s.theirMessageText]}>
+              {item.content}
+            </Text>
+          )}
           <Text style={[s.messageTime, !isMe && s.theirMessageTime]}>
             {formatTime(item.created_at)}
           </Text>
@@ -199,6 +265,13 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
 
       {/* Input */}
       <View style={[s.inputContainer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+        <TouchableOpacity
+          style={s.photoBtn}
+          onPress={handlePickImage}
+          disabled={sending}
+        >
+          <Text style={s.photoBtnText}>📷</Text>
+        </TouchableOpacity>
         <TextInput
           style={s.input}
           placeholder="Type a message..."
@@ -210,7 +283,7 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
         />
         <TouchableOpacity
           style={[s.sendBtn, (!messageText.trim() || sending) && s.sendBtnDisabled]}
-          onPress={handleSend}
+          onPress={() => handleSend()}
           disabled={!messageText.trim() || sending}
         >
           <Text style={s.sendBtnText}>{sending ? '...' : '→'}</Text>
@@ -306,6 +379,12 @@ const s = StyleSheet.create({
   theirMessageText: {
     color: colors.textPrimary,
   },
+  messageImage: {
+    width: 200,
+    height: 200,
+    borderRadius: radius.sm,
+    marginBottom: spacing.xs,
+  },
   messageTime: {
     ...typography.captionSm,
     fontSize: 9,
@@ -338,6 +417,20 @@ const s = StyleSheet.create({
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
     gap: spacing.sm,
+    alignItems: 'flex-end',
+  },
+  photoBtn: {
+    width: 44,
+    height: 44,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoBtnText: {
+    fontSize: 20,
   },
   input: {
     flex: 1,
