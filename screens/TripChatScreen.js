@@ -43,7 +43,10 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
           filter: `trip_id=eq.${trip.id}`,
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
         }
       )
       .subscribe();
@@ -73,15 +76,24 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
     const text = messageText.trim();
     setMessageText('');
 
-    const { error } = await supabase.from('trip_messages').insert({
+    const { data, error } = await supabase.from('trip_messages').insert({
       trip_id: trip.id,
       sender_id: currentUserId,
       content: text,
-    });
+    }).select().single();
 
     if (error) {
       console.error('Error sending message:', error);
       setMessageText(text);
+    } else if (data) {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        return [...prev, data];
+      });
+      // Trigger push notification (fire and forget)
+      supabase.functions.invoke('notify-trip-message', {
+        body: { message_id: data.id },
+      }).catch(() => {});
     }
     setSending(false);
   }
@@ -143,7 +155,8 @@ export default function TripChatScreen({ trip, allProfiles, onClose }) {
   return (
     <KeyboardAvoidingView
       style={[s.container, { paddingTop: insets.top }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
       {/* Header */}
       <View style={s.header}>

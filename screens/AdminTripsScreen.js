@@ -100,6 +100,28 @@ export default function AdminTripsScreen({ session }) {
     if (trips.length > 0) loadUnreadCounts();
   }, [trips]);
 
+  async function handleDeleteTrip(trip) {
+    Alert.alert(
+      'Delete Trip',
+      `Delete ${trip.city} (${trip.crm_id || 'No CRM'})? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('trips').delete().eq('id', trip.id);
+            if (error) {
+              Alert.alert('Error', error.message);
+            } else {
+              setTrips((prev) => prev.filter((t) => t.id !== trip.id));
+            }
+          },
+        },
+      ]
+    );
+  }
+
   async function handleRefresh() {
     setRefreshing(true);
     await loadData();
@@ -186,6 +208,7 @@ export default function AdminTripsScreen({ session }) {
               }
             }}
             onChatPress={(t) => setChatTrip(t)}
+            onDelete={handleDeleteTrip}
           />
         ))}
 
@@ -233,7 +256,7 @@ export default function AdminTripsScreen({ session }) {
 }
 
 // ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────────────────────────
-function TripCard({ trip, allProfiles, onPress, unreadCount, onChatPress }) {
+function TripCard({ trip, allProfiles, onPress, unreadCount, onChatPress, onDelete }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -301,8 +324,17 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, onChatPress }) {
         </Text>
       )}
 
-      {/* Chat Button */}
+      {/* Action Row */}
       <View style={s.chatRow}>
+        {trip.status === 'pending' && (
+          <TouchableOpacity
+            style={s.deleteBtn}
+            onPress={() => onDelete(trip)}
+            activeOpacity={0.7}
+          >
+            <Text style={s.deleteBtnText}>DELETE</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={s.chatBtn}
           onPress={() => onChatPress(trip)}
@@ -1031,6 +1063,21 @@ const s = StyleSheet.create({
     borderTopColor: colors.border,
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  deleteBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtnText: {
+    ...typography.labelSm,
+    color: colors.error,
+    letterSpacing: 1,
   },
   chatBtn: {
     position: 'relative',
