@@ -58,9 +58,14 @@ const ADMIN_TABS = [
   { id: "geofence", label: "Geofence Activity" },
 ];
 
-function AdminNav({ active, onSelect, onSignOut }) {
+const CALLER_HIDDEN_TABS = ["log"];
+
+function AdminNav({ active, onSelect, onSignOut, userRole }) {
   const [open, setOpen] = useState(false);
-  const activeLabel = ADMIN_TABS.find((t) => t.id === active)?.label ?? "";
+  const tabs = userRole === "caller"
+    ? ADMIN_TABS.filter((t) => !CALLER_HIDDEN_TABS.includes(t.id))
+    : ADMIN_TABS;
+  const activeLabel = tabs.find((t) => t.id === active)?.label ?? "";
 
   return (
     <>
@@ -94,7 +99,7 @@ function AdminNav({ active, onSelect, onSignOut }) {
         >
           <View style={styles.drawer}>
             <Text style={styles.drawerHeading}>MENU</Text>
-            {ADMIN_TABS.map((t) => (
+            {tabs.map((t) => (
               <TouchableOpacity
                 key={t.id}
                 style={[
@@ -201,22 +206,31 @@ export default function App() {
   const notificationListener = useRef();
   const responseListener = useRef();
 
+  const profileLoadedRef = useRef(false);
+
   async function loadProfile(s) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", s.user.id)
-      .single();
-    if (error) {
-      await supabase.auth.signOut();
-      return;
-    }
-    if (data) {
-      setProfile(data);
-      setActiveTab(prev => prev ?? (data?.role === "admin" ? "overview" : "dashboard"));
-      // Register push token for drivers
-      // Register push token
-      registerForPushNotifications(s.user.id);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", s.user.id)
+        .single();
+      if (error) {
+        // Only sign out if profile has never loaded (first attempt)
+        if (!profileLoadedRef.current) {
+          await supabase.auth.signOut();
+        }
+        return;
+      }
+      if (data) {
+        profileLoadedRef.current = true;
+        setProfile(data);
+        setActiveTab(prev => prev ?? (data?.role === "admin" || data?.role === "caller" ? "overview" : "dashboard"));
+        registerForPushNotifications(s.user.id);
+      }
+    } catch (e) {
+      console.log("loadProfile error:", e);
+      // Don't sign out on network errors if already loaded
     }
   }
 
@@ -255,8 +269,12 @@ export default function App() {
       if (event === "INITIAL_SESSION") return;
       setSession(session);
       if (session) {
-        loadProfile(session);
+        // Only load profile if not already loaded (avoid re-trigger loops)
+        if (!profileLoadedRef.current) {
+          loadProfile(session);
+        }
       } else {
+        profileLoadedRef.current = false;
         setProfile(null);
         setActiveTab(null);
       }
@@ -313,21 +331,17 @@ export default function App() {
   }, []);
 
   // Start/stop geofence monitoring based on profile role
+  const geofenceStartedRef = useRef(false);
   useEffect(() => {
-    if (profile?.role === "driver") {
+    if (profile?.role === "driver" && !geofenceStartedRef.current) {
+      geofenceStartedRef.current = true;
       GeofenceManager.start().then(() => {
         setTimeout(async () => {
           const isActive = await GeofenceManager.isActive();
           console.log("🔍 Geofence registered:", isActive);
-
-          const distance = await GeofenceManager.getDistanceFromGeofence();
-          console.log("🔍 Distance from home:", distance);
         }, 3000);
       });
     }
-    return () => {
-      GeofenceManager.stop();
-    };
   }, [profile]);
 
   async function handleSignOut() {
@@ -337,6 +351,7 @@ export default function App() {
         .delete()
         .eq("driver_id", session.user.id);
       await GeofenceManager.stop();
+      geofenceStartedRef.current = false;
     } finally {
       await supabase.auth.signOut();
     }
@@ -356,19 +371,19 @@ export default function App() {
 
   if (!session) return <LoginScreen />;
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = profile?.role === "admin" || profile?.role === "caller";
 
   function renderScreen() {
     if (isAdmin) {
       if (activeTab === "overview") return <AdminOverview key={refreshKey} />;
-      if (activeTab === "log") return <LogEntryScreen key={refreshKey} />;
-      if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} />;
+      if (activeTab === "log") return <LogEntryScreen key={refreshKey} userRole={profile?.role} />;
+      if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} userRole={profile?.role} />;
       if (activeTab === "mileage")
         return <MileageCostsScreen key={refreshKey} />;
       if (activeTab === "availability")
         return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
-      if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} session={session} />;
+      if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} session={session} userRole={profile?.role} />;
       if (activeTab === "tracking")
         return <AdminTrackingHealthScreen key={refreshKey} />;
       if (activeTab === "geofence")
@@ -394,6 +409,7 @@ export default function App() {
             active={activeTab}
             onSelect={handleTabSelect}
             onSignOut={handleSignOut}
+            userRole={profile?.role}
           />
           <View style={styles.screen}>{renderScreen()}</View>
         </View>

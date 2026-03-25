@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView,
   RefreshControl, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
-import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+import { LineChart, PieChart } from 'react-native-chart-kit';
 import { supabase } from '../lib/supabase';
 import useResponsive from '../lib/useResponsive';
 
@@ -46,7 +46,7 @@ const chartConfig = {
 
 export default function MileageCostsScreen() {
   const { width } = useResponsive();
-  const chartWidth = Math.min(width - 40, 660);
+  const chartWidth = Math.min(width - 72, 620);
   const [entries, setEntries] = useState([]);
   const [trips, setTrips] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -128,23 +128,28 @@ export default function MileageCostsScreen() {
     };
   })();
 
-  // ── Chart 2: Miles per Driver (this week) ───────────────────────────────
-  const milesPerDriverData = (() => {
-    const driverMiles = drivers.map(d => {
-      const de = weekEntries.filter(e => e.driver_id === d.id);
-      return {
-        name: d.name.split(' ')[0], // First name only
-        miles: de.reduce((t, e) => t + Number(e.miles ?? 0), 0),
-      };
-    }).filter(d => d.miles > 0).sort((a, b) => b.miles - a.miles);
-
-    if (driverMiles.length === 0) {
-      return { labels: ['No data'], datasets: [{ data: [0] }] };
+  // ── Chart 2: Weekly Mileage Trend (8 weeks) ────────────────────────────
+  const milesTrendData = (() => {
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+      const { start, end } = getWeekBounds(i);
+      const wkEntries = entries.filter(e => {
+        const d = new Date(e.date + 'T12:00:00');
+        return d >= start && d <= end;
+      });
+      const miles = wkEntries.reduce((t, e) => t + Number(e.miles ?? 0), 0);
+      weeks.push({
+        label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        miles,
+      });
     }
-
     return {
-      labels: driverMiles.map(d => d.name),
-      datasets: [{ data: driverMiles.map(d => d.miles) }],
+      labels: weeks.map(w => w.label),
+      datasets: [{
+        data: weeks.map(w => w.miles),
+        color: (opacity = 1) => `rgba(59, 140, 247, ${opacity})`,
+        strokeWidth: 2,
+      }],
     };
   })();
 
@@ -274,16 +279,19 @@ export default function MileageCostsScreen() {
 
         {activeChart === 1 && (
           <View>
-            <Text style={s.chartTitle}>Miles per Driver (This Week)</Text>
-            <BarChart
-              data={milesPerDriverData}
+            <Text style={s.chartTitle}>Weekly Mileage Trend (8 Weeks)</Text>
+            <LineChart
+              data={milesTrendData}
               width={chartWidth}
               height={220}
               chartConfig={chartConfig}
+              bezier
               style={s.chart}
-              showValuesOnTopOfBars
+              withInnerLines
+              withOuterLines
+              withVerticalLines={false}
+              withHorizontalLines
               fromZero
-              withInnerLines={false}
             />
           </View>
         )}

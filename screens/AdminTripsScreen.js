@@ -28,7 +28,8 @@ const STATUS_COLORS = {
   finalized: colors.textTertiary,
 };
 
-export default function AdminTripsScreen({ session }) {
+export default function AdminTripsScreen({ session, userRole }) {
+  const isReadOnly = userRole === 'caller';
   const { isTablet } = useResponsive();
   const [trips, setTrips] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
@@ -177,9 +178,11 @@ export default function AdminTripsScreen({ session }) {
             ALL TRIPS ({trips.length})
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={s.createBtn} onPress={() => setView('create')}>
-          <Text style={s.createBtnText}>+ CREATE TRIP</Text>
-        </TouchableOpacity>
+        {!isReadOnly && (
+          <TouchableOpacity style={s.createBtn} onPress={() => setView('create')}>
+            <Text style={s.createBtnText}>+ CREATE TRIP</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Header */}
@@ -207,13 +210,15 @@ export default function AdminTripsScreen({ session }) {
             unreadCount={unreadCounts[trip.id] || 0}
             isTablet={isTablet}
             onPress={() => {
+              if (isReadOnly) return;
               setSelectedTrip(trip);
               if (trip.status === 'completed') {
                 setShowFinalizeModal(true);
               }
             }}
             onChatPress={(t) => setChatTrip(t)}
-            onDelete={handleDeleteTrip}
+            onDelete={isReadOnly ? null : handleDeleteTrip}
+            isReadOnly={isReadOnly}
           />
         ))}
         </View>
@@ -262,7 +267,7 @@ export default function AdminTripsScreen({ session }) {
 }
 
 // ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────────────────────────
-function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPress, onDelete }) {
+function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPress, onDelete, isReadOnly }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -332,7 +337,7 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPre
 
       {/* Action Row */}
       <View style={s.chatRow}>
-        {trip.status === 'pending' && (
+        {trip.status === 'pending' && !isReadOnly && onDelete && (
           <TouchableOpacity
             style={s.deleteBtn}
             onPress={() => onDelete(trip)}
