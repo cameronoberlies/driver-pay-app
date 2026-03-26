@@ -31,7 +31,7 @@ import { useUpdateChecker } from "./lib/AndroidUpdateChecker";
 import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
-import RadarService from './src/services/RadarService';
+import GoogleMapsService from './lib/GoogleMapsService';
 
 
 Notifications.setNotificationHandler({
@@ -324,16 +324,16 @@ export default function App() {
   }, [profile]);
 
   async function initializeTracking() {
-    const result = await RadarService.initialize(session?.user?.id, profile?.name);
+    const result = await GoogleMapsService.initialize(session?.user?.id, profile?.name);
     if (result.success) {
-      console.log('✅ Radar initialized');
+      console.log('✅ GoogleMaps initialized');
     } else {
-      console.warn('⚠️ Radar init failed:', result.error);
+      console.warn('⚠️ GoogleMaps init failed:', result.error);
     }
   }
 
   async function cleanupTracking() {
-    await RadarService.cleanup();
+    await GoogleMapsService.cleanup();
   }
 
   async function handleSignOut() {

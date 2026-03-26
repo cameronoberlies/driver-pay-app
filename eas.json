@@ -11,7 +11,13 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://yincjogkjvotupzgetqg.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS": "AIzaSyBVqSHPjq3MMNL5W1S1IEvOLNBKKbzJH-o",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID": "AIzaSyBcBsgGIQFumFnSnGGjpmZ2H86KUrT6-7g"
+      }
     },
     "production": {
       "autoIncrement": true,

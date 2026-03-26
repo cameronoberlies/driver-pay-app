@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { formatDuration } from '../lib/utils';
-import RadarService from '../src/services/RadarService';
+import GoogleMapsService from '../lib/GoogleMapsService';
 
 const TIMEOUT_MS = 8000;
 
@@ -164,8 +164,8 @@ export default function MyTripsScreen({ session }) {
 
   // ── Start trip ───────────────────────────────────────────────────────────
   async function handleStart(trip) {
-    // Start Radar tracking
-    const result = await RadarService.startTripTracking(trip.id);
+    // Start GPS tracking
+    const result = await GoogleMapsService.startTripTracking(trip.id);
 
     if (!result.success) {
       Alert.alert('Tracking Warning', result.error || 'GPS tracking may not work');
@@ -211,15 +211,15 @@ export default function MyTripsScreen({ session }) {
           text: 'End Trip', style: 'destructive', onPress: async () => {
             if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
-            // Stop Radar tracking and get route data
-            const result = await RadarService.stopTripTracking(trip.id, session.user.id);
+            // Stop GPS tracking and get route data
+            const result = await GoogleMapsService.stopTripTracking(trip.id, session.user.id);
 
-            // Calculate hours from timestamps (fallback if Radar fails)
+            // Calculate hours from timestamps (fallback if GPS fails)
             const startTime = new Date(trip.actual_start);
             const endTime = new Date();
             const manualHours = ((endTime - startTime) / (1000 * 60 * 60)).toFixed(2);
 
-            // Update trip with Radar data (or fallback to manual)
+            // Update trip with GPS data (or fallback to manual)
             const finalMiles = result.success && result.tripData.actual_distance_miles
               ? parseFloat(result.tripData.actual_distance_miles)
               : trip.miles || 0;
