@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography } from '../lib/theme';
 
 export default function LiveDriversScreen() {
   const [locations, setLocations] = useState([]);
@@ -116,14 +117,14 @@ export default function LiveDriversScreen() {
 </html>
 `;
 
-  if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   return (
     <View style={s.container}>
       {/* Status bar */}
       <View style={s.statusBar}>
         <View style={s.statusLeft}>
-          <View style={[s.dot, { backgroundColor: active.length > 0 ? '#4ae885' : '#555' }]} />
+          <View style={[s.dot, { backgroundColor: active.length > 0 ? colors.success : colors.textTertiary }]} />
           <Text style={s.statusText}>{active.length} ACTIVE</Text>
         </View>
         <TouchableOpacity onPress={load} style={s.refreshBtn}>
@@ -175,25 +176,25 @@ export default function LiveDriversScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
   statusBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    paddingHorizontal: spacing.xl, paddingTop: spacing.xl, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  statusLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { fontSize: 11, color: '#888', fontWeight: '700', letterSpacing: 1.5 },
-  refreshBtn: { borderWidth: 1, borderColor: '#2a2a2a', paddingHorizontal: 12, paddingVertical: 5 },
-  refreshText: { fontSize: 10, color: '#f5a623', fontWeight: '700', letterSpacing: 1.5 },
-  pillRow: { paddingHorizontal: 20, paddingVertical: 10, flexGrow: 0 },
-  pill: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', paddingHorizontal: 12, paddingVertical: 8, marginRight: 8 },
-  pillActive: { borderColor: '#4ae885', backgroundColor: 'rgba(74,232,133,0.1)' },
-  pillName: { fontSize: 12, fontWeight: '700', color: '#555' },
-  pillNameActive: { color: '#4ae885' },
-  pillTime: { fontSize: 10, color: '#444', marginTop: 2 },
+  statusLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dot: { width: spacing.sm, height: spacing.sm, borderRadius: spacing.xs },
+  statusText: { ...typography.label, color: colors.textSecondary },
+  refreshBtn: { borderWidth: 1, borderColor: colors.borderLight, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  refreshText: { ...typography.labelSm, color: colors.primary, fontSize: 10 },
+  pillRow: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm + 2, flexGrow: 0 },
+  pill: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginRight: spacing.sm },
+  pillActive: { borderColor: colors.success, backgroundColor: colors.successDim },
+  pillName: { ...typography.caption, fontWeight: '700', color: colors.textTertiary },
+  pillNameActive: { color: colors.success },
+  pillTime: { ...typography.captionSm, color: colors.textMuted, marginTop: spacing.xs / 2, fontSize: 10 },
   mapContainer: { flex: 1 },
-  map: { flex: 1, backgroundColor: '#0a0a0a' },
+  map: { flex: 1, backgroundColor: colors.bg },
   emptyOverlay: { position: 'absolute', bottom: 40, left: 0, right: 0, alignItems: 'center' },
-  emptyText: { color: '#444', fontSize: 13 },
+  emptyText: { ...typography.bodySm, color: colors.textMuted },
 });

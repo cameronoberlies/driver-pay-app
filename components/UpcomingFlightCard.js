@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { flightAPI } from '../lib/flightAPI';
+import { colors, spacing, radius, typography } from '../lib/theme';
 
 function formatTime(timeString) {
   if (!timeString) return 'TBD';
@@ -38,7 +39,7 @@ export default function UpcomingFlightCard({ driverName }) {
     try {
       const data = await flightAPI.getDriverFlights(driverName);
       // Only show upcoming flights (not landed/completed)
-      const upcoming = data.filter(f => 
+      const upcoming = data.filter(f =>
         ['SCHEDULED', 'BOARDING', 'DELAYED', 'IN_AIR'].includes(f.status)
       );
       setFlights(upcoming.slice(0, 2)); // Max 2 flights
@@ -76,45 +77,42 @@ export default function UpcomingFlightCard({ driverName }) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#111',
-    padding: 16,
-    marginHorizontal: 24,
-    marginVertical: 12,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    marginVertical: spacing.md,
+    borderRadius: radius.md,
     borderLeftWidth: 3,
-    borderLeftColor: '#f5a623',
+    borderLeftColor: colors.primary,
   },
   heading: {
-    fontSize: 12,
-    color: '#f5a623',
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: 12,
+    ...typography.label,
+    color: colors.primary,
+    marginBottom: spacing.md,
   },
   flightCard: {
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: colors.border,
   },
   flightNumber: {
-    fontSize: 15,
-    color: '#fff',
+    ...typography.bodyLg,
+    color: colors.textPrimary,
     fontWeight: '700',
   },
   flightTime: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 4,
+    ...typography.bodySm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   flightStatus: {
-    fontSize: 13,
-    color: '#4a9eff',
-    marginTop: 4,
+    ...typography.bodySm,
+    color: colors.info,
+    marginTop: spacing.xs,
   },
   reminder: {
-    fontSize: 11,
-    color: '#ff9500',
-    marginTop: 8,
+    ...typography.captionSm,
+    color: colors.warning,
+    marginTop: spacing.sm,
     fontStyle: 'italic',
   },
 });

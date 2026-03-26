@@ -9,19 +9,19 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
-  Dimensions,
 } from "react-native";
 
 import { supabase } from "../lib/supabase";
 import { getWeekBounds, getMonthBounds, withTimeout } from "../lib/utils";
+import { colors, spacing, radius, typography, components } from "../lib/theme";
 import UpcomingFlightCard from "../components/UpcomingFlightCard";
 import DriverPhoneBookModal from '../components/DriverPhoneBookModal';
+import useResponsive from '../lib/useResponsive';
 
 const TIMEOUT_MS = 8000;
-const { width } = Dimensions.get('window');
-const isIPad = width > 400;
 
 export default function DriverDashboard({ session }) {
+  const { isTablet } = useResponsive();
   const [profile, setProfile] = useState(null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -98,7 +98,7 @@ export default function DriverDashboard({ session }) {
   if (loading)
     return (
       <View style={styles.center}>
-        <ActivityIndicator color="#f5a623" size="large" />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
 
@@ -121,17 +121,17 @@ export default function DriverDashboard({ session }) {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { maxWidth: 700, alignSelf: 'center', width: '100%' }]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          tintColor="#f5a623"
+          tintColor={colors.primary}
         />
       }
     >
       <View style={styles.header}>
-        <View style={{ flex: 1, marginRight: 12 }}>
+        <View style={{ flex: 1, marginRight: spacing.md }}>
           <Text style={styles.greeting} numberOfLines={1}>
             Hey, {profile?.name?.split(" ")[0]}.
           </Text>
@@ -223,49 +223,62 @@ export default function DriverDashboard({ session }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
-  content: { padding: 24, paddingBottom: 48 },
+  container: {
+    ...components.screen,
+  },
+  content: {
+    padding: spacing.xxl,
+    paddingBottom: spacing.xxxxl,
+  },
   center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#0a0a0a",
+    ...components.center,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 28,
+    marginBottom: spacing.xxxl,
     paddingTop: 60,
-    paddingHorizontal: Platform.isPad ? 24 : 0, // More padding on iPad for smaller screens
+    paddingHorizontal: Platform.isPad ? spacing.xxl : 0,
   },
   greeting: {
-    fontSize: isIPad ? 22 : 26,
-    fontWeight: "900",
-    color: "#fff",
+    ...typography.displaySm,
+    fontSize: 26,
+    color: colors.textPrimary,
     letterSpacing: 0.5,
   },
-  period: { fontSize: 10, color: "#555", letterSpacing: 2, marginTop: 4 },
-  signOutBtn: {
-    paddingVertical: 10, // Bigger tap target
-    paddingHorizontal: 16, // More horizontal space
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    borderRadius: 4,
+  period: {
+    ...typography.labelSm,
+    fontSize: 10,
+    color: colors.textTertiary,
+    letterSpacing: 2,
+    marginTop: spacing.xs,
   },
-  signOutText: { fontSize: 10, color: "#666", letterSpacing: 1.5 },
+  signOutBtn: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
+  },
+  signOutText: {
+    ...typography.labelSm,
+    fontSize: 10,
+    color: colors.textTertiary,
+    letterSpacing: 1.5,
+  },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.md,
   },
   phoneBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#111',
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
+    borderColor: colors.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -273,92 +286,120 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   heroCard: {
-    backgroundColor: "#111",
-    borderRadius: 12,
-    padding: 24,
-    marginBottom: 28,
-    borderWidth: 1,
-    borderColor: "#1e1e1e",
-    borderLeftWidth: 3,
-    borderLeftColor: "#f5a623",
+    ...components.cardAccent(colors.primary),
+    padding: spacing.xxl,
+    marginBottom: spacing.xxxl,
   },
   heroLabel: {
+    ...typography.labelSm,
     fontSize: 10,
-    color: "#888",
+    color: colors.textSecondary,
     letterSpacing: 2.5,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   heroValue: {
-    fontSize: 44,
-    fontWeight: "900",
-    color: "#f5a623",
-    letterSpacing: -1,
+    ...typography.displayLg,
+    color: colors.primary,
   },
-  heroRow: { flexDirection: "row", alignItems: "center", marginTop: 8, gap: 6 },
-  heroStat: { fontSize: 13, color: "#888" },
-  heroDot: { color: "#444" },
+  heroRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  heroStat: {
+    ...typography.bodySm,
+    color: colors.textSecondary,
+  },
+  heroDot: {
+    ...typography.bodySm,
+    color: colors.textMuted,
+  },
   sectionLabel: {
+    ...typography.labelSm,
     fontSize: 10,
-    color: "#555",
+    color: colors.textTertiary,
     letterSpacing: 3,
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
-  bonusRow: { flexDirection: "row", gap: 12, marginBottom: 28 },
+  bonusRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginBottom: spacing.xxxl,
+  },
   bonusCard: {
+    ...components.card,
     flex: 1,
-    backgroundColor: "#111",
-    borderRadius: 10,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1e1e1e",
+    marginBottom: 0,
   },
-  bonusEarned: { borderColor: "#f5a623" },
-  bonusTitle: { fontSize: 9, color: "#666", letterSpacing: 2, marginBottom: 6 },
+  bonusEarned: {
+    borderColor: colors.primary,
+  },
+  bonusTitle: {
+    ...typography.labelSm,
+    color: colors.textTertiary,
+    letterSpacing: 2,
+    marginBottom: spacing.sm,
+  },
   bonusAmount: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#fff",
-    marginBottom: 4,
+    ...typography.displaySm,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
-  bonusDesc: { fontSize: 11, color: "#555" },
+  bonusDesc: {
+    ...typography.captionSm,
+    color: colors.textTertiary,
+  },
   bonusTag: {
+    ...typography.caption,
     fontSize: 10,
-    color: "#f5a623",
+    color: colors.primary,
     fontWeight: "700",
-    marginTop: 8,
+    marginTop: spacing.sm,
     letterSpacing: 1,
   },
   tripRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: "#151515",
+    borderBottomColor: colors.surfaceElevated,
   },
-  tripLeft: { flex: 1 },
-  tripCity: { fontSize: 15, fontWeight: "700", color: "#fff" },
-  tripMeta: { fontSize: 12, color: "#555", marginTop: 2 },
-  tripRight: { alignItems: "flex-end" },
-  tripPay: { fontSize: 16, fontWeight: "800", color: "#f5a623" },
+  tripLeft: {
+    flex: 1,
+  },
+  tripCity: {
+    ...typography.h3,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  tripMeta: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
+  },
+  tripRight: {
+    alignItems: "flex-end",
+  },
+  tripPay: {
+    ...typography.h2,
+    fontSize: 16,
+    color: colors.primary,
+  },
   missedTag: {
-    fontSize: 9,
-    color: "#e05252",
+    ...typography.labelSm,
+    color: colors.error,
     letterSpacing: 1,
-    marginTop: 3,
-    fontWeight: "700",
+    marginTop: spacing.xs,
   },
-  errorText: { color: "#555", fontSize: 14, marginBottom: 16 },
+  errorText: {
+    ...components.errorText,
+  },
   retryBtn: {
-    borderWidth: 1,
-    borderColor: "#f5a623",
-    paddingHorizontal: 24,
-    paddingVertical: 10,
+    ...components.retryBtn,
   },
   retryText: {
-    color: "#f5a623",
-    fontSize: 12,
-    letterSpacing: 2,
-    fontWeight: "700",
+    ...components.retryText,
   },
 });

@@ -10,19 +10,28 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography, components } from '../lib/theme';
+import CityAutocomplete from '../components/CityAutocomplete';
+import TripChatScreen from './TripChatScreen';
+import useResponsive from '../lib/useResponsive';
 
 // Trip status colors
 const STATUS_COLORS = {
-  pending: '#3b8cf7',
-  in_progress: '#f5a623',
-  completed: '#4caf50',
-  finalized: '#6b7585',
+  pending: colors.info,
+  in_progress: colors.primary,
+  completed: colors.success,
+  finalized: colors.textTertiary,
 };
 
-export default function AdminTripsScreen() {
+export default function AdminTripsScreen({ session, userRole }) {
+  const isReadOnly = userRole === 'caller';
+  const { isTablet } = useResponsive();
   const [trips, setTrips] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +40,8 @@ export default function AdminTripsScreen() {
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [routeTrip, setRouteTrip] = useState(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
+  const [chatTrip, setChatTrip] = useState(null);
 
   // Load trips + profiles
   useEffect(() => {
@@ -70,6 +81,52 @@ export default function AdminTripsScreen() {
     setLoading(false);
   }
 
+  async function loadUnreadCounts() {
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (!userId || trips.length === 0) return;
+
+    const { data: messages } = await supabase
+      .from('trip_messages')
+      .select('trip_id, sender_id')
+      .in('trip_id', trips.map(t => t.id));
+
+    if (!messages) return;
+
+    const counts = {};
+    messages.forEach(msg => {
+      if (msg.sender_id !== userId) {
+        counts[msg.trip_id] = (counts[msg.trip_id] || 0) + 1;
+      }
+    });
+    setUnreadCounts(counts);
+  }
+
+  useEffect(() => {
+    if (trips.length > 0) loadUnreadCounts();
+  }, [trips]);
+
+  async function handleDeleteTrip(trip) {
+    Alert.alert(
+      'Delete Trip',
+      `Delete ${trip.city} (${trip.crm_id || 'No CRM'})? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('trips').delete().eq('id', trip.id);
+            if (error) {
+              Alert.alert('Error', error.message);
+            } else {
+              setTrips((prev) => prev.filter((t) => t.id !== trip.id));
+            }
+          },
+        },
+      ]
+    );
+  }
+
   async function handleRefresh() {
     setRefreshing(true);
     await loadData();
@@ -85,7 +142,7 @@ export default function AdminTripsScreen() {
   if (loading && !refreshing) {
     return (
       <View style={s.container}>
-        <ActivityIndicator size="large" color="#f5a623" style={{ marginTop: 100 }} />
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 100 }} />
       </View>
     );
   }
@@ -123,9 +180,11 @@ export default function AdminTripsScreen() {
             ALL TRIPS ({trips.length})
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={s.createBtn} onPress={() => setView('create')}>
-          <Text style={s.createBtnText}>+ CREATE TRIP</Text>
-        </TouchableOpacity>
+        {!isReadOnly && (
+          <TouchableOpacity style={s.createBtn} onPress={() => setView('create')}>
+            <Text style={s.createBtnText}>+ CREATE TRIP</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Header */}
@@ -139,24 +198,33 @@ export default function AdminTripsScreen() {
       {/* Trips List - CARD LAYOUT */}
       <ScrollView
         style={s.scrollView}
+        contentContainerStyle={isTablet ? { alignSelf: 'center', maxWidth: 700, width: '100%' } : undefined}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
+        <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
         {displayedTrips.map((trip) => (
           <TripCard
             key={trip.id}
             trip={trip}
             allProfiles={allProfiles}
+            unreadCount={unreadCounts[trip.id] || 0}
+            isTablet={isTablet}
             onPress={() => {
+              if (isReadOnly) return;
               setSelectedTrip(trip);
               if (trip.status === 'completed') {
                 setShowFinalizeModal(true);
               }
             }}
             onViewRoute={(t) => setRouteTrip(t)}
+            onChatPress={(t) => setChatTrip(t)}
+            onDelete={isReadOnly ? null : handleDeleteTrip}
+            isReadOnly={isReadOnly}
           />
         ))}
+        </View>
 
         {displayedTrips.length === 0 && (
           <View style={s.emptyState}>
@@ -173,6 +241,20 @@ export default function AdminTripsScreen() {
           trip={routeTrip}
           onClose={() => setRouteTrip(null)}
         />
+      )}
+
+      {/* Chat Modal */}
+      {chatTrip && (
+        <Modal visible transparent animationType="slide">
+          <TripChatScreen
+            trip={chatTrip}
+            allProfiles={allProfiles}
+            onClose={() => {
+              setChatTrip(null);
+              loadUnreadCounts();
+            }}
+          />
+        </Modal>
       )}
 
       {/* Finalize Modal */}
@@ -196,7 +278,7 @@ export default function AdminTripsScreen() {
 }
 
 // ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────
-function TripCard({ trip, allProfiles, onPress, onViewRoute }) {
+function TripCard({ trip, allProfiles, onPress, onViewRoute, unreadCount, isTablet, onChatPress, onDelete, isReadOnly }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -220,7 +302,7 @@ function TripCard({ trip, allProfiles, onPress, onViewRoute }) {
   const isCompleted = trip.status === 'completed' || trip.status === 'finalized';
 
   return (
-    <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[s.card, isTablet && { width: '48.5%' }]} onPress={onPress} activeOpacity={0.7}>
       {/* Top Row: Status + CRM + Type */}
       <View style={s.cardTop}>
         <View style={[s.statusBadge, { borderColor: statusColor, backgroundColor: `${statusColor}15` }]}>
@@ -289,6 +371,31 @@ function TripCard({ trip, allProfiles, onPress, onViewRoute }) {
           {trip.notes}
         </Text>
       )}
+
+      {/* Action Row */}
+      <View style={s.chatRow}>
+        {trip.status === 'pending' && !isReadOnly && onDelete && (
+          <TouchableOpacity
+            style={s.deleteBtn}
+            onPress={() => onDelete(trip)}
+            activeOpacity={0.7}
+          >
+            <Text style={s.deleteBtnText}>DELETE</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={s.chatBtn}
+          onPress={() => onChatPress(trip)}
+          activeOpacity={0.7}
+        >
+          <Text style={s.chatIcon}>💬</Text>
+          {unreadCount > 0 && (
+            <View style={s.chatBadge}>
+              <Text style={s.chatBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -376,14 +483,39 @@ function CreateTripView({ drivers, onBack, onCreated }) {
     city: '',
     crm_id: '',
     carpage_link: '',
-    scheduled_pickup: now.toISOString().slice(0, 16),
+    scheduled_pickup: now,
     notes: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  
+  // Date picker states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function onDateChange(event, selectedDate) {
+    if (Platform.OS === 'android') setShowDatePicker(false);
+    if (selectedDate) {
+      const newDate = new Date(form.scheduled_pickup);
+      newDate.setFullYear(selectedDate.getFullYear());
+      newDate.setMonth(selectedDate.getMonth());
+      newDate.setDate(selectedDate.getDate());
+      set('scheduled_pickup', newDate);
+    }
+  }
+
+  function onTimeChange(event, selectedTime) {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (selectedTime) {
+      const newDate = new Date(form.scheduled_pickup);
+      newDate.setHours(selectedTime.getHours());
+      newDate.setMinutes(selectedTime.getMinutes());
+      set('scheduled_pickup', newDate);
+    }
   }
 
   async function handleCreate() {
@@ -403,7 +535,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
       city: form.city,
       crm_id: form.crm_id,
       carpage_link: form.carpage_link || null,
-      scheduled_pickup: form.scheduled_pickup || null,
+      scheduled_pickup: form.scheduled_pickup.toISOString(),
       notes: form.notes || null,
       status: 'pending',
     };
@@ -424,7 +556,18 @@ function CreateTripView({ drivers, onBack, onCreated }) {
     onCreated(data);
   }
 
+  const formattedDate = form.scheduled_pickup.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const formattedTime = form.scheduled_pickup.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
     <ScrollView style={s.createContainer}>
       <View style={s.createHeader}>
         <TouchableOpacity onPress={onBack} style={s.backBtn}>
@@ -522,10 +665,10 @@ function CreateTripView({ drivers, onBack, onCreated }) {
 
         <View style={s.field}>
           <Text style={s.label}>City / Pickup Location *</Text>
-          <TextInput
+          <CityAutocomplete
             style={s.input}
             placeholder="Columbus, OH"
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.city}
             onChangeText={(text) => set('city', text)}
           />
@@ -536,29 +679,73 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <TextInput
             style={s.input}
             placeholder="AB123"
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.crm_id}
             onChangeText={(text) => set('crm_id', text)}
           />
         </View>
 
+        {/* DATE & TIME PICKERS */}
         <View style={s.field}>
           <Text style={s.label}>Scheduled Pickup</Text>
-          <TextInput
-            style={s.input}
-            placeholder="YYYY-MM-DD HH:MM"
-            placeholderTextColor="#6b7585"
-            value={form.scheduled_pickup}
-            onChangeText={(text) => set('scheduled_pickup', text)}
-          />
+          <View style={s.dateTimeRow}>
+            <TouchableOpacity
+              style={s.dateTimeButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={s.dateTimeButtonText}>📅 {formattedDate}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={s.dateTimeButton}
+              onPress={() => setShowTimePicker(true)}
+            >
+              <Text style={s.dateTimeButtonText}>🕐 {formattedTime}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {showDatePicker && (
+          <View>
+            <DateTimePicker
+              value={form.scheduled_pickup}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              themeVariant="dark"
+              textColor="#fff"
+              onChange={onDateChange}
+            />
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={s.pickerDone} onPress={() => setShowDatePicker(false)}>
+                <Text style={s.pickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {showTimePicker && (
+          <View>
+            <DateTimePicker
+              value={form.scheduled_pickup}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              themeVariant="dark"
+              textColor="#fff"
+              onChange={onTimeChange}
+            />
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={s.pickerDone} onPress={() => setShowTimePicker(false)}>
+                <Text style={s.pickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         <View style={s.field}>
           <Text style={s.label}>Carpage Link</Text>
           <TextInput
             style={s.input}
             placeholder="https://..."
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.carpage_link}
             onChangeText={(text) => set('carpage_link', text)}
             autoCapitalize="none"
@@ -570,7 +757,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
           <TextInput
             style={[s.input, { height: 80 }]}
             placeholder="Flight info, seller contact, etc."
-            placeholderTextColor="#6b7585"
+            placeholderTextColor={colors.textTertiary}
             value={form.notes}
             onChangeText={(text) => set('notes', text)}
             multiline
@@ -590,10 +777,11 @@ function CreateTripView({ drivers, onBack, onCreated }) {
         </TouchableOpacity>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
-// ── FINALIZE TRIP MODAL ──────────────────────────────────────────────────────
+// ── FINALIZE TRIP MODAL ────────────────────────────────────────────────────────────────────────────
 function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
@@ -729,7 +917,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.00"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.pay}
                 onChangeText={(text) => set('pay', text)}
@@ -742,7 +930,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
                 <TextInput
                   style={s.modalInput}
                   placeholder="0.00"
-                  placeholderTextColor="#6b7585"
+                  placeholderTextColor={colors.textTertiary}
                   keyboardType="decimal-pad"
                   value={form.pay2}
                   onChangeText={(text) => set('pay2', text)}
@@ -755,7 +943,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.0"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.hours}
                 onChangeText={(text) => set('hours', text)}
@@ -767,7 +955,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.miles}
                 onChangeText={(text) => set('miles', text)}
@@ -779,7 +967,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.00"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.actual_cost}
                 onChangeText={(text) => set('actual_cost', text)}
@@ -791,7 +979,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               <TextInput
                 style={s.modalInput}
                 placeholder="0.00"
-                placeholderTextColor="#6b7585"
+                placeholderTextColor={colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={form.estimated_cost}
                 onChangeText={(text) => set('estimated_cost', text)}
@@ -833,51 +1021,48 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
   );
 }
 
-// ── STYLES ───────────────────────────────────────────────────────────────────
+// ── STYLES ───────────────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#0d0f12',
+    ...components.screen,
   },
   tabBar: {
     flexDirection: 'row',
-    padding: 16,
-    gap: 12,
+    padding: spacing.lg,
+    gap: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
   },
   tabActive: {
-    backgroundColor: 'rgba(245, 166, 35, 0.1)',
-    borderColor: '#f5a623',
+    backgroundColor: colors.primaryDim,
+    borderColor: colors.primary,
   },
   tabText: {
-    fontSize: 11,
-    fontWeight: '700',
+    ...typography.captionSm,
     letterSpacing: 1,
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   tabTextActive: {
-    color: '#f5a623',
+    color: colors.primary,
   },
   createBtn: {
     marginLeft: 'auto',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#f5a623',
-    borderRadius: 4,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
   },
   createBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
+    ...typography.captionSm,
     letterSpacing: 1,
-    color: '#0d0f12',
+    color: colors.bg,
   },
   scrollView: {
     flex: 1,
@@ -886,93 +1071,91 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
+    ...typography.caption,
     letterSpacing: 1.5,
-    color: '#f5a623',
+    color: colors.primary,
   },
   sectionCount: {
-    fontSize: 11,
-    color: '#6b7585',
+    ...typography.captionSm,
+    color: colors.textTertiary,
   },
   // CARD LAYOUT
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 8,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
   },
   cardTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
+    marginBottom: spacing.md,
+    gap: spacing.md,
   },
   statusBadge: {
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
   },
   statusText: {
-    fontSize: 9,
-    fontWeight: '700',
+    ...typography.labelSm,
     letterSpacing: 0.5,
   },
   crmId: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: '700',
-    color: '#f5a623',
+    color: colors.primary,
     letterSpacing: 0.5,
   },
   tripType: {
-    fontSize: 11,
-    color: '#6b7585',
+    ...typography.captionSm,
+    color: colors.textTertiary,
     marginLeft: 'auto',
   },
   cardMain: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   cardLeft: {
     flex: 1,
   },
   cityText: {
-    fontSize: 16,
+    ...typography.h3,
     fontWeight: '600',
-    color: '#d4d8df',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   pickupText: {
-    fontSize: 12,
-    color: '#6b7585',
+    ...typography.caption,
+    color: colors.textTertiary,
   },
   driversRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   driverLabel: {
-    fontSize: 13,
-    color: '#d4d8df',
+    ...typography.bodySm,
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   driverLabel2: {
-    fontSize: 13,
-    color: '#6b7585',
+    ...typography.bodySm,
+    color: colors.textTertiary,
     fontWeight: '500',
   },
   flyBadge: {
-    color: '#f5a623',
+    color: colors.primary,
     fontSize: 11,
   },
   tripStatsRow: {
@@ -1011,131 +1194,204 @@ const s = StyleSheet.create({
     marginBottom: 10,
   },
   notesText: {
-    fontSize: 12,
-    color: '#6b7585',
-    marginTop: 12,
-    paddingTop: 12,
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#1a1d24',
+    borderTopColor: colors.border,
     fontStyle: 'italic',
   },
   emptyState: {
-    padding: 60,
+    padding: spacing.xxxxl + 12,
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 13,
-    color: '#6b7585',
+    ...typography.bodySm,
+    color: colors.textTertiary,
+  },
+  // Chat button on trip cards
+  chatRow: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  deleteBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtnText: {
+    ...typography.labelSm,
+    color: colors.error,
+    letterSpacing: 1,
+  },
+  chatBtn: {
+    position: 'relative',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primaryDim,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chatIcon: {
+    fontSize: 18,
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: colors.error,
+    borderRadius: radius.full,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  chatBadgeText: {
+    ...typography.labelSm,
+    fontSize: 10,
+    color: colors.textPrimary,
   },
   // Create form styles
   createContainer: {
-    flex: 1,
-    backgroundColor: '#0d0f12',
+    ...components.screen,
   },
   createHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
+    padding: spacing.lg,
+    gap: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1d24',
+    borderBottomColor: colors.border,
   },
   backBtn: {
-    padding: 8,
+    padding: spacing.sm,
   },
   backText: {
-    fontSize: 14,
-    color: '#f5a623',
+    ...typography.body,
+    color: colors.primary,
     fontWeight: '600',
   },
   createTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#d4d8df',
+    ...typography.h3,
+    color: colors.textPrimary,
   },
   form: {
-    padding: 16,
+    padding: spacing.lg,
   },
   field: {
-    marginBottom: 20,
+    marginBottom: spacing.xl,
   },
   label: {
-    fontSize: 11,
+    ...typography.captionSm,
     fontWeight: '700',
     letterSpacing: 0.5,
-    color: '#6b7585',
-    marginBottom: 6,
+    color: colors.textTertiary,
+    marginBottom: spacing.sm - 2,
     textTransform: 'uppercase',
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
-    padding: 12,
-    fontSize: 14,
-    color: '#d4d8df',
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    ...typography.body,
+    color: colors.textPrimary,
   },
   driverPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.lg - 2,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
-    marginRight: 8,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    marginRight: spacing.sm,
   },
   driverPillActive: {
-    backgroundColor: 'rgba(245, 166, 35, 0.1)',
-    borderColor: '#f5a623',
+    backgroundColor: colors.primaryDim,
+    borderColor: colors.primary,
   },
   driverPillText: {
-    fontSize: 12,
+    ...typography.caption,
     fontWeight: '600',
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   driverPillTextActive: {
-    color: '#f5a623',
+    color: colors.primary,
   },
   segmentControl: {
     flexDirection: 'row',
     borderWidth: 1,
-    borderColor: '#1a1d24',
-    borderRadius: 4,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
     overflow: 'hidden',
   },
   segment: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.surface,
   },
   segmentActive: {
-    backgroundColor: '#f5a623',
+    backgroundColor: colors.primary,
   },
   segmentText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '600',
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   segmentTextActive: {
-    color: '#0d0f12',
+    color: colors.bg,
+  },
+  // Date/Time Picker Styles
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  dateTimeButton: {
+    flex: 1,
+    backgroundColor: colors.primaryDim,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  dateTimeButtonText: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.primary,
   },
   errorText: {
-    fontSize: 12,
-    color: '#ef4444',
-    marginBottom: 12,
+    ...typography.caption,
+    color: colors.error,
+    marginBottom: spacing.md,
   },
   createSubmitBtn: {
-    backgroundColor: '#f5a623',
-    paddingVertical: 14,
-    borderRadius: 4,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.lg - 2,
+    borderRadius: radius.sm,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   createSubmitText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '700',
-    color: '#0d0f12',
+    color: colors.bg,
     letterSpacing: 0.5,
   },
   disabled: {
@@ -1144,111 +1400,124 @@ const s = StyleSheet.create({
   // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
-    padding: 20,
+    padding: spacing.xl,
   },
   modalContainer: {
-    backgroundColor: '#1a1d24',
-    borderRadius: 8,
-    padding: 20,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.md,
+    padding: spacing.xl,
     maxWidth: 500,
     width: '100%',
     alignSelf: 'center',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#d4d8df',
-    marginBottom: 4,
+    ...typography.h2,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   modalSubtitle: {
-    fontSize: 13,
-    color: '#6b7585',
-    marginBottom: 20,
+    ...typography.bodySm,
+    color: colors.textTertiary,
+    marginBottom: spacing.xl,
   },
   modalField: {
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   modalLabel: {
-    fontSize: 11,
+    ...typography.captionSm,
     fontWeight: '700',
     letterSpacing: 0.5,
-    color: '#6b7585',
-    marginBottom: 6,
+    color: colors.textTertiary,
+    marginBottom: spacing.sm - 2,
     textTransform: 'uppercase',
   },
   modalInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#2a2d34',
-    borderRadius: 4,
-    padding: 10,
-    fontSize: 14,
-    color: '#d4d8df',
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
+    padding: spacing.sm + 2,
+    ...typography.body,
+    color: colors.textPrimary,
   },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: spacing.md,
   },
   checkbox: {
     width: 20,
     height: 20,
     borderWidth: 1,
-    borderColor: '#2a2d34',
+    borderColor: colors.borderLight,
     borderRadius: 2,
-    marginRight: 8,
+    marginRight: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxChecked: {
-    backgroundColor: '#ef4444',
-    borderColor: '#ef4444',
+    backgroundColor: colors.error,
+    borderColor: colors.error,
   },
   checkmark: {
-    color: '#fff',
+    color: colors.textPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
   checkboxLabel: {
-    fontSize: 12,
-    color: '#d4d8df',
+    ...typography.caption,
+    color: colors.textPrimary,
   },
   modalError: {
-    fontSize: 12,
-    color: '#ef4444',
-    marginTop: 12,
+    ...typography.caption,
+    color: colors.error,
+    marginTop: spacing.md,
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
+    gap: spacing.md,
+    marginTop: spacing.xl,
   },
   modalBtnCancel: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
     borderWidth: 1,
-    borderColor: '#2a2d34',
-    borderRadius: 4,
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
     alignItems: 'center',
   },
   modalBtnCancelText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '600',
-    color: '#6b7585',
+    color: colors.textTertiary,
   },
   modalBtnSave: {
     flex: 1,
-    paddingVertical: 12,
-    backgroundColor: '#f5a623',
-    borderRadius: 4,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
     alignItems: 'center',
   },
   modalBtnSaveText: {
-    fontSize: 13,
+    ...typography.bodySm,
     fontWeight: '700',
-    color: '#0d0f12',
+    color: colors.bg,
+  },
+  pickerDone: {
+    alignSelf: 'center',
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.xxxl,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  pickerDoneText: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.bg,
   },
   // Route map modal
   routeModalContainer: {

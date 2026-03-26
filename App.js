@@ -11,11 +11,13 @@ import {
 } from "react-native";
 import {
   SafeAreaProvider,
+  useSafeAreaInsets,
   initialWindowMetrics,
 } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { supabase } from "./lib/supabase";
+import { colors, spacing, radius, typography } from "./lib/theme";
 import LoginScreen from "./screens/LoginScreen";
 import DriverDashboard from "./screens/DriverDashboard";
 import MyTripsScreen from "./screens/MyTripsScreen";
@@ -31,8 +33,6 @@ import { useUpdateChecker } from "./lib/AndroidUpdateChecker";
 import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
-import GoogleMapsService from './lib/GoogleMapsService';
-
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -46,17 +46,22 @@ const ADMIN_TABS = [
   { id: "overview", label: "Overview" },
   { id: "log", label: "Log Entry" },
   { id: "entries", label: "All Entries" },
+  { id: "trips", label: "Trips" },
   { id: "mileage", label: "Mileage Costs" },
   { id: "availability", label: "Availability" },
   { id: "live", label: "Live Drivers" },
-  { id: "trips", label: "Trips" },
   { id: "flights", label: "Live Flights" },
   { id: "geofence", label: "Geofence Activity" },
 ];
 
-function AdminNav({ active, onSelect, onSignOut }) {
+const CALLER_HIDDEN_TABS = ["log"];
+
+function AdminNav({ active, onSelect, onSignOut, userRole }) {
   const [open, setOpen] = useState(false);
-  const activeLabel = ADMIN_TABS.find((t) => t.id === active)?.label ?? "";
+  const tabs = userRole === "caller"
+    ? ADMIN_TABS.filter((t) => !CALLER_HIDDEN_TABS.includes(t.id))
+    : ADMIN_TABS;
+  const activeLabel = tabs.find((t) => t.id === active)?.label ?? "";
 
   return (
     <>
@@ -90,7 +95,7 @@ function AdminNav({ active, onSelect, onSignOut }) {
         >
           <View style={styles.drawer}>
             <Text style={styles.drawerHeading}>MENU</Text>
-            {ADMIN_TABS.map((t) => (
+            {tabs.map((t) => (
               <TouchableOpacity
                 key={t.id}
                 style={[
@@ -121,9 +126,9 @@ function AdminNav({ active, onSelect, onSignOut }) {
 }
 
 function DriverTabBar({ active, onSelect }) {
-  const bottomInset = Platform.OS === "android" ? 48 : 0;
+  const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.tabBar, { paddingBottom: bottomInset }]}>
+    <View style={[styles.tabBar, { paddingBottom: insets.bottom }]}>
       {["dashboard", "trips", "availability"].map((t) => (
         <TouchableOpacity
           key={t}
@@ -191,11 +196,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [chatTrip, setChatTrip] = useState(null);
+
   const appState = useRef(AppState.currentState);
   const notificationListener = useRef();
   const responseListener = useRef();
+
+  const profileLoadedRef = useRef(false);
 
   async function loadProfile(s) {
     const { data, error } = await supabase
@@ -204,7 +211,7 @@ export default function App() {
       .eq("id", s.user.id)
       .single();
     if (error) {
-      console.log("Profile fetch error:", error.message);
+      await supabase.auth.signOut();
       return;
     }
     if (data) {
@@ -216,25 +223,24 @@ export default function App() {
     }
   }
 
-  // OTA update check disabled — causes reload loop on launch
-  // expo-updates handles this natively on app start already
-  // useEffect(() => {
-  //   async function checkForUpdates() {
-  //     if (__DEV__) return;
-  //     try {
-  //       const update = await Updates.checkForUpdateAsync();
-  //       if (update.isAvailable) {
-  //         setIsUpdating(true);
-  //         await Updates.fetchUpdateAsync();
-  //         await Updates.reloadAsync();
-  //       }
-  //     } catch (e) {
-  //       console.log("Update check failed:", e);
-  //       setIsUpdating(false);
-  //     }
-  //   }
-  //   checkForUpdates();
-  // }, []);
+  // Check for OTA updates before anything else
+  useEffect(() => {
+    async function checkForUpdates() {
+      if (__DEV__) return;
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          setIsUpdating(true);
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (e) {
+        console.log("Update check failed:", e);
+        setIsUpdating(false);
+      }
+    }
+    checkForUpdates();
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -255,8 +261,12 @@ export default function App() {
       if (event === "TOKEN_REFRESHED") return;
       setSession(session);
       if (session) {
-        loadProfile(session);
+        // Only load profile if not already loaded (avoid re-trigger loops)
+        if (!profileLoadedRef.current) {
+          loadProfile(session);
+        }
       } else {
+        profileLoadedRef.current = false;
         setProfile(null);
         setActiveTab(null);
       }
@@ -275,11 +285,9 @@ export default function App() {
           if (currentSession) {
             try {
               const { data } = await supabase.auth.refreshSession();
-              if (data?.session && data.session.access_token !== currentSession.access_token) {
-                setSession(data.session);
-              }
-            } catch (e) {
-              console.log("Session refresh error:", e.message);
+              if (data?.session) setSession(data.session);
+            } finally {
+              setIsRefreshing(false);
             }
           }
         }
@@ -310,16 +318,21 @@ export default function App() {
     };
   }, []);
 
-
-  // Initialize/cleanup Radar tracking based on profile
+  // Start/stop geofence monitoring based on profile role
   useEffect(() => {
     if (profile?.role === "driver") {
-      initializeTracking();
-    } else {
-      cleanupTracking();
+      GeofenceManager.start().then(() => {
+        setTimeout(async () => {
+          const isActive = await GeofenceManager.isActive();
+          console.log("🔍 Geofence registered:", isActive);
+
+          const distance = await GeofenceManager.getDistanceFromGeofence();
+          console.log("🔍 Distance from home:", distance);
+        }, 3000);
+      });
     }
     return () => {
-      cleanupTracking();
+      GeofenceManager.stop();
     };
   }, [profile]);
 
@@ -343,6 +356,7 @@ export default function App() {
         .from("driver_locations")
         .delete()
         .eq("driver_id", session.user.id);
+      await GeofenceManager.stop();
     } finally {
       await supabase.auth.signOut();
     }
@@ -353,39 +367,30 @@ export default function App() {
     setRefreshKey((k) => k + 1);
   }
 
-  if (loading || isUpdating)
+  if (loading || (session && !activeTab))
     return (
       <View style={styles.loader}>
-        <ActivityIndicator color="#f5a623" size="large" />
-        {isUpdating && (
-          <Text style={{ color: "#888", marginTop: 12 }}>
-            Loading update...
-          </Text>
-        )}
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
 
   if (!session) return <LoginScreen />;
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = profile?.role === "admin" || profile?.role === "caller";
 
   function renderScreen() {
-    if (isRefreshing)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator color="#f5a623" size="large" />
-        </View>
-      );
     if (isAdmin) {
       if (activeTab === "overview") return <AdminOverview key={refreshKey} />;
-      if (activeTab === "log") return <LogEntryScreen key={refreshKey} />;
-      if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} />;
+      if (activeTab === "log") return <LogEntryScreen key={refreshKey} userRole={profile?.role} />;
+      if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} userRole={profile?.role} />;
       if (activeTab === "mileage")
         return <MileageCostsScreen key={refreshKey} />;
       if (activeTab === "availability")
         return <AvailabilityScreen key={refreshKey} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} />;
+      if (activeTab === "tracking")
+        return <AdminTrackingHealthScreen key={refreshKey} />;
       if (activeTab === "geofence")
         return <GeofenceActivityScreen key={refreshKey} />;
       if (activeTab === "flights")
@@ -394,7 +399,7 @@ export default function App() {
       if (activeTab === "dashboard")
         return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips")
-        return <MyTripsScreen key={refreshKey} session={session} />;
+        return <MyTripsScreen key={refreshKey} session={session} navigation={{ navigate: (screen, params) => { if (screen === 'TripChat') setChatTrip(params); } }} />;
       if (activeTab === "availability")
         return <DriverAvailabilityScreen key={refreshKey} session={session} />;
     }
@@ -409,6 +414,7 @@ export default function App() {
             active={activeTab}
             onSelect={handleTabSelect}
             onSignOut={handleSignOut}
+            userRole={profile?.role}
           />
           <View style={styles.screen}>{renderScreen()}</View>
         </View>
@@ -419,8 +425,19 @@ export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <View style={styles.app}>
-        <View style={styles.screen}>{renderScreen()}</View>
-        <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
+        {chatTrip ? (
+          <TripChatScreen
+            trip={chatTrip.trip}
+            currentUser={chatTrip.currentUser}
+            allProfiles={chatTrip.allProfiles}
+            onClose={() => setChatTrip(null)}
+          />
+        ) : (
+          <>
+            <View style={styles.screen}>{renderScreen()}</View>
+            <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
+          </>
+        )}
       </View>
     </SafeAreaProvider>
   );
@@ -429,84 +446,84 @@ export default function App() {
 const styles = StyleSheet.create({
   loader: {
     flex: 1,
-    backgroundColor: "#0a0a0a",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
-  app: { flex: 1, backgroundColor: "#0a0a0a" },
+  app: { flex: 1, backgroundColor: colors.bg },
   screen: { flex: 1 },
   adminBar: {
     paddingTop: 60,
-    paddingBottom: 14,
-    paddingHorizontal: 20,
-    backgroundColor: "#0a0a0a",
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+    borderBottomColor: colors.border,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   adminBarTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#fff",
-    letterSpacing: 2,
+    ...typography.label,
+    color: colors.textPrimary,
   },
-  adminBarRight: { flexDirection: "row", alignItems: "center", gap: 14 },
+  adminBarRight: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
   signOutBtn: {
     borderWidth: 1,
-    borderColor: "#2a2a2a",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderColor: colors.borderLight,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   signOutText: {
-    fontSize: 9,
-    color: "#555",
-    letterSpacing: 1.5,
-    fontWeight: "700",
+    ...typography.labelSm,
+    color: colors.textTertiary,
   },
-  hamburger: { gap: 5, padding: 4 },
-  line: { width: 22, height: 2, backgroundColor: "#f5a623" },
+  hamburger: { gap: spacing.xs, padding: spacing.xs },
+  line: { width: 22, height: 2, backgroundColor: colors.primary },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   drawer: {
-    backgroundColor: "#111",
-    borderTopWidth: 1,
-    borderTopColor: "#222",
-    paddingTop: 28,
-    paddingBottom: 52,
-    paddingHorizontal: 28,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderRadius: radius.md,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xxxxl,
+    paddingHorizontal: spacing.xxl,
   },
   drawerHeading: {
-    fontSize: 10,
-    color: "#444",
+    ...typography.label,
+    color: colors.textMuted,
     letterSpacing: 3,
-    fontWeight: "700",
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   drawerRow: {
-    paddingVertical: 18,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: "#1a1a1a",
+    borderBottomColor: colors.border,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   drawerRowActive: {},
-  drawerLabel: { fontSize: 20, fontWeight: "700", color: "#555" },
-  drawerLabelActive: { color: "#f5a623" },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#f5a623" },
+  drawerLabel: { fontSize: 20, fontWeight: "700", color: colors.textTertiary },
+  drawerLabelActive: { color: colors.primary },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
   tabBar: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: "#1a1a1a",
-    backgroundColor: "#0a0a0a",
+    borderTopColor: colors.border,
+    backgroundColor: colors.bg,
   },
-  tab: { flex: 1, paddingVertical: 16, alignItems: "center" },
-  tabActive: { borderTopWidth: 2, borderTopColor: "#f5a623" },
-  tabText: { fontSize: 11, color: "#444", letterSpacing: 2, fontWeight: "700" },
-  tabTextActive: { color: "#f5a623" },
+  tab: { flex: 1, paddingVertical: spacing.lg, alignItems: "center" },
+  tabActive: { borderTopWidth: 2, borderTopColor: colors.primary },
+  tabText: {
+    ...typography.labelSm,
+    color: colors.textMuted,
+  },
+  tabTextActive: { color: colors.primary },
 });

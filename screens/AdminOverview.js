@@ -4,6 +4,8 @@ import {
   RefreshControl, ActivityIndicator, TouchableOpacity, Modal,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography, components } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 function getWeekBounds() {
   const d = new Date();
@@ -118,7 +120,7 @@ function DriverModal({ driver, entries, visible, onClose }) {
                 <Text style={s.modalStatLabel}>{item.label}</Text>
                 <Text style={[
                   s.modalStatValue,
-                  item.label === 'TRIP BONUS' && monthTrips >= 20 && { color: '#4caf50' }
+                  item.label === 'TRIP BONUS' && monthTrips >= 20 && { color: colors.success }
                 ]}>{item.value}</Text>
               </View>
             ))}
@@ -150,6 +152,7 @@ function DriverModal({ driver, entries, visible, onClose }) {
 }
 
 export default function AdminOverview() {
+  const { isTablet } = useResponsive();
   const [drivers, setDrivers] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +186,7 @@ export default function AdminOverview() {
   useEffect(() => { load(); }, []);
   function onRefresh() { setRefreshing(true); load(); }
 
-  if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   if (error) return (
     <View style={s.center}>
@@ -201,8 +204,8 @@ export default function AdminOverview() {
 
   return (
     <>
-      <ScrollView style={s.container} contentContainerStyle={s.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}>
+      <ScrollView style={s.container} contentContainerStyle={[s.content, isTablet && { alignSelf: 'center', maxWidth: 700, width: '100%' }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
         <Text style={s.period}>
           {wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} –{' '}
@@ -224,6 +227,7 @@ export default function AdminOverview() {
 
         <Text style={s.sectionTitle}>THIS WEEK</Text>
 
+        <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
         {drivers.map(driver => {
           const driverEntries = entries.filter(e => e.driver_id === driver.id);
           const wk = driverEntries.filter(e => {
@@ -235,7 +239,7 @@ export default function AdminOverview() {
           const monthTrips = driverEntries.filter(e => e.date.slice(0, 7) === thisMonth).length;
 
           return (
-            <TouchableOpacity key={driver.id} style={s.card} onPress={() => setSelectedDriver(driver)}>
+            <TouchableOpacity key={driver.id} style={[s.card, isTablet && { width: '48.5%' }]} onPress={() => setSelectedDriver(driver)}>
               <View style={s.cardLeft}>
                 <Text style={s.driverName}>
                   {driver.name}
@@ -252,6 +256,7 @@ export default function AdminOverview() {
             </TouchableOpacity>
           );
         })}
+        </View>
 
         {drivers.length === 0 && <Text style={s.empty}>No drivers found.</Text>}
       </ScrollView>
@@ -267,61 +272,63 @@ export default function AdminOverview() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingTop: 20, paddingBottom: 40 },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
-  period: { fontSize: 11, color: '#555', letterSpacing: 1, marginBottom: 20 },
-  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },
-  statCard: { flex: 1, backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', padding: 12 },
-  statLabel: { fontSize: 9, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 4 },
-  statValue: { fontSize: 18, fontWeight: '900', color: '#f5a623' },
-  sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginBottom: 10 },
+  container: { ...components.screen },
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxxl },
+  center: { ...components.center },
+  period: { ...typography.captionSm, color: colors.textTertiary, letterSpacing: 1, marginBottom: spacing.xl },
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xxxl },
+  statCard: {
+    flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, padding: spacing.md,
+  },
+  statLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 2, marginBottom: spacing.xs },
+  statValue: { ...typography.h2, color: colors.primary },
+  sectionTitle: { ...components.sectionTitle },
   card: {
-    backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e',
-    borderLeftWidth: 3, borderLeftColor: '#3b8cf7',
-    padding: 16, marginBottom: 10,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderLeftWidth: 3, borderLeftColor: colors.info,
+    borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   cardLeft: { flex: 1 },
-  cardRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  driverName: { fontSize: 16, fontWeight: '800', color: '#fff' },
-  flyBadge: { fontSize: 12, fontWeight: '700', color: '#f5a623' },
-  driverMeta: { fontSize: 11, color: '#555', marginTop: 3 },
-  driverPay: { fontSize: 22, fontWeight: '900', color: '#f5a623' },
-  chevron: { fontSize: 22, color: '#333', fontWeight: '300' },
-  empty: { color: '#444', textAlign: 'center', marginTop: 32 },
-  errorText: { color: '#555', fontSize: 14, marginBottom: 16 },
-  retryBtn: { borderWidth: 1, borderColor: '#f5a623', paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: '#f5a623', fontSize: 12, letterSpacing: 2, fontWeight: '700' },
+  cardRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  driverName: { ...typography.h3, color: colors.textPrimary },
+  flyBadge: { ...typography.caption, color: colors.primary },
+  driverMeta: { ...typography.captionSm, color: colors.textTertiary, marginTop: spacing.xs },
+  driverPay: { ...typography.displaySm, fontSize: 22, color: colors.primary },
+  chevron: { fontSize: 22, color: colors.textMuted, fontWeight: '300' },
+  empty: { ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.xxxl },
+  errorText: { ...components.errorText },
+  retryBtn: { ...components.retryBtn, borderRadius: radius.sm },
+  retryText: { ...components.retryText },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: '#111', borderTopWidth: 1, borderTopColor: '#222',
-    paddingHorizontal: 24, paddingTop: 16, paddingBottom: 48,
-    maxHeight: '90%',
+  modalOverlay: { ...components.modalOverlay },
+  modalSheet: { ...components.modalSheet, maxHeight: '90%' },
+  modalHandle: { ...components.modalHandle },
+  modalName: { ...typography.displaySm, color: colors.textPrimary, marginBottom: spacing.xs },
+  modalPeriod: { ...typography.captionSm, color: colors.textTertiary, letterSpacing: 1, marginBottom: spacing.xl },
+  modalSection: { ...typography.labelSm, color: colors.textMuted, letterSpacing: 2, marginBottom: spacing.md, marginTop: spacing.xs },
+  modalStatsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  modalStat: {
+    flex: 1, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, padding: spacing.md,
   },
-  modalHandle: { width: 36, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  modalName: { fontSize: 24, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  modalPeriod: { fontSize: 11, color: '#555', letterSpacing: 1, marginBottom: 20 },
-  modalSection: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginBottom: 10, marginTop: 4 },
-  modalStatsRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  modalStat: { flex: 1, backgroundColor: '#0a0a0a', borderWidth: 1, borderColor: '#1e1e1e', padding: 10 },
-  modalStatLabel: { fontSize: 9, color: '#555', letterSpacing: 1.5, fontWeight: '700', marginBottom: 3 },
-  modalStatValue: { fontSize: 16, fontWeight: '900', color: '#f5a623' },
+  modalStatLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 1.5, marginBottom: spacing.xs },
+  modalStatValue: { ...typography.h3, color: colors.primary },
   tripRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   tripLeft: {},
   tripRight: { alignItems: 'flex-end' },
-  tripCity: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  tripDate: { fontSize: 11, color: '#555', marginTop: 2 },
-  tripPay: { fontSize: 14, fontWeight: '800', color: '#f5a623' },
-  tripMiles: { fontSize: 11, color: '#555', marginTop: 2 },
+  tripCity: { ...typography.body, fontWeight: '700', color: colors.textPrimary },
+  tripDate: { ...typography.captionSm, color: colors.textTertiary, marginTop: 2 },
+  tripPay: { ...typography.body, fontWeight: '800', color: colors.primary },
+  tripMiles: { ...typography.captionSm, color: colors.textTertiary, marginTop: 2 },
   closeBtn: {
-    marginTop: 24, borderWidth: 1, borderColor: '#2a2a2a',
-    paddingVertical: 14, alignItems: 'center',
+    marginTop: spacing.xxl, borderWidth: 1, borderColor: colors.borderLight,
+    borderRadius: radius.sm, paddingVertical: spacing.lg, alignItems: 'center',
   },
-  closeBtnText: { color: '#555', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  closeBtnText: { ...typography.label, color: colors.textTertiary },
 });

@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:578420055471:android:b24d24b62893cbe5fc235a",
+        "android_client_info": {
+          "package_name": "com.cameronoberlies.driverpay"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwyPufF_KN8er6gPi-TbY643P3LB3ziOM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:578420055471:android:45bfaa8f2b7d45cefc235a",
         "android_client_info": {
           "package_name": "com.driverportal.app"

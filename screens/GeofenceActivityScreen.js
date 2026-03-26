@@ -7,8 +7,11 @@ import {
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { colors, spacing, radius, typography } from '../lib/theme';
+import useResponsive from '../lib/useResponsive';
 
 export default function GeofenceActivityScreen() {
+  const { isTablet } = useResponsive();
   const [events, setEvents] = useState([]);
   const [profiles, setProfiles] = useState({});
   const [loading, setLoading] = useState(true);
@@ -77,7 +80,7 @@ export default function GeofenceActivityScreen() {
   if (loading) {
     return (
       <View style={s.center}>
-        <ActivityIndicator color="#f5a623" />
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
@@ -90,14 +93,14 @@ export default function GeofenceActivityScreen() {
   const earlierEvents = events.filter(e => new Date(e.created_at) < todayStart);
 
   return (
-    <ScrollView 
+    <ScrollView
       style={s.container}
-      contentContainerStyle={s.content}
+      contentContainerStyle={[s.content, isTablet && { alignSelf: 'center', maxWidth: 700, width: '100%' }]}
       refreshControl={
         <RefreshControl 
           refreshing={refreshing} 
           onRefresh={onRefresh} 
-          tintColor="#f5a623" 
+          tintColor={colors.primary}
         />
       }
     >
@@ -164,7 +167,7 @@ export default function GeofenceActivityScreen() {
 function EventCard({ event, driverName, timeAgo }) {
   const isExit = event.event_type === 'exit';
   const icon = isExit ? '🚗' : '🏁';
-  const color = isExit ? '#f5a623' : '#4ae885';
+  const color = isExit ? colors.primary : colors.success;
   const action = isExit ? 'LEFT DEALERSHIP' : 'ARRIVED AT DEALERSHIP';
 
   return (
@@ -194,52 +197,50 @@ function EventCard({ event, driverName, timeAgo }) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 20, paddingTop: 60, paddingBottom: 48 },
-  center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.xl, paddingTop: spacing.xl, paddingBottom: spacing.xxxxl },
+  center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
 
   statsBar: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
+    gap: spacing.md,
+    marginBottom: spacing.xxl,
   },
   statBox: {
     flex: 1,
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1e1e1e',
-    padding: 16,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
     alignItems: 'center',
   },
   statValue: {
+    ...typography.displayMd,
     fontSize: 28,
-    fontWeight: '900',
-    color: '#f5a623',
-    marginBottom: 4,
+    color: colors.primary,
+    marginBottom: spacing.xs,
   },
   statLabel: {
-    fontSize: 9,
-    color: '#555',
-    letterSpacing: 1.5,
-    fontWeight: '700',
+    ...typography.labelSm,
+    color: colors.textMuted,
   },
 
   sectionTitle: {
-    fontSize: 10,
-    color: '#444',
-    letterSpacing: 2,
-    fontWeight: '700',
-    marginBottom: 10,
-    marginTop: 4,
+    ...typography.label,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+    marginTop: spacing.xs,
   },
 
   card: {
-    backgroundColor: '#111',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1e1e1e',
+    borderColor: colors.border,
     borderLeftWidth: 3,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -249,47 +250,47 @@ const s = StyleSheet.create({
   cardLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.md,
     flex: 1,
   },
   cardIcon: {
     fontSize: 24,
   },
   cardDriver: {
-    fontSize: 16,
+    ...typography.h3,
     fontWeight: '900',
-    color: '#fff',
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   cardAction: {
+    ...typography.labelSm,
     fontSize: 10,
     letterSpacing: 1.5,
-    fontWeight: '700',
   },
   cardTime: {
-    fontSize: 11,
-    color: '#666',
+    ...typography.captionSm,
+    color: colors.textTertiary,
   },
   cardTrip: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
-    paddingTop: 12,
+    gap: spacing.md,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    borderTopColor: colors.border,
   },
   tripLabel: {
     fontSize: 10,
-    color: '#666',
+    color: colors.textTertiary,
   },
   tripCity: {
-    fontSize: 12,
-    color: '#888',
+    ...typography.caption,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   tripCrm: {
-    fontSize: 11,
-    color: '#555',
+    ...typography.captionSm,
+    color: colors.textMuted,
     fontFamily: 'Courier',
   },
 
@@ -300,14 +301,14 @@ const s = StyleSheet.create({
     paddingTop: 80,
   },
   emptyTitle: {
-    fontSize: 16,
+    ...typography.h3,
     fontWeight: '900',
-    color: '#333',
+    color: colors.textMuted,
     letterSpacing: 2,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   emptySub: {
-    fontSize: 12,
-    color: '#444',
+    ...typography.caption,
+    color: colors.textMuted,
   },
 });
