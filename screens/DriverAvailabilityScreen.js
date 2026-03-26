@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Switch,
   TouchableOpacity, ActivityIndicator, TextInput, Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
@@ -124,8 +125,11 @@ export default function DriverAvailabilityScreen({ session }) {
   }
 
   return (
-    <View style={s.container}>
-    <ScrollView contentContainerStyle={[s.content, { maxWidth: 500, alignSelf: 'center', width: '100%' }]} showsVerticalScrollIndicator={false}>
+    <KeyboardAvoidingView
+      style={s.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+    <ScrollView contentContainerStyle={[s.content, { maxWidth: 500, alignSelf: 'center', width: '100%' }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       {/* Header */}
       <View style={{ marginBottom: spacing.xxxl, alignItems: 'center' }}>
         <Text style={s.heading}>AVAILABILITY</Text>
@@ -228,13 +232,13 @@ export default function DriverAvailabilityScreen({ session }) {
         </View>
       )}
     </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
   container: { ...components.screen },
-  content: { flex: 1, padding: spacing.xl, paddingTop: 80, paddingBottom: 100, justifyContent: 'center' },
+  content: { padding: spacing.xl, paddingTop: 80, paddingBottom: 100 },
   center: { ...components.center },
 
   heading: { ...typography.displaySm, color: colors.textPrimary, letterSpacing: 2, marginBottom: spacing.sm, textAlign: 'center' },
