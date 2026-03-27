@@ -36,6 +36,7 @@ import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
 import TripChatScreen from "./screens/TripChatScreen";
+import HomeScreen from "./screens/HomeScreen";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -49,10 +50,8 @@ const ADMIN_TABS = [
   { id: "overview", label: "Overview" },
   { id: "log", label: "Log Entry" },
   { id: "entries", label: "All Entries" },
-  { id: "trips", label: "Trips" },
   { id: "mileage", label: "Mileage Costs" },
   { id: "availability", label: "Availability" },
-  { id: "live", label: "Live Drivers" },
   { id: "flights", label: "Live Flights" },
   { id: "tracking", label: "Tracking Health" },
   { id: "geofence", label: "Geofence Activity" },
@@ -60,17 +59,26 @@ const ADMIN_TABS = [
 
 const CALLER_HIDDEN_TABS = ["log"];
 
+// Bottom tab labels mapping
+const BOTTOM_TAB_LABELS = {
+  home: "HOME",
+  trips: "TRIPS",
+  live: "LIVE DRIVERS",
+};
+
 function AdminNav({ active, onSelect, onSignOut, userRole }) {
   const [open, setOpen] = useState(false);
   const tabs = userRole === "caller"
     ? ADMIN_TABS.filter((t) => !CALLER_HIDDEN_TABS.includes(t.id))
     : ADMIN_TABS;
-  const activeLabel = tabs.find((t) => t.id === active)?.label ?? "";
+
+  // Determine label: bottom tab takes priority, fallback to hamburger menu
+  const activeLabel = BOTTOM_TAB_LABELS[active] || tabs.find((t) => t.id === active)?.label?.toUpperCase() || "";
 
   return (
     <>
       <View style={styles.adminBar}>
-        <Text style={styles.adminBarTitle}>{activeLabel.toUpperCase()}</Text>
+        <Text style={styles.adminBarTitle}>{activeLabel}</Text>
         <View style={styles.adminBarRight}>
           <TouchableOpacity onPress={onSignOut} style={styles.signOutBtn}>
             <Text style={styles.signOutText}>SIGN OUT</Text>
@@ -126,6 +134,32 @@ function AdminNav({ active, onSelect, onSignOut, userRole }) {
         </TouchableOpacity>
       </Modal>
     </>
+  );
+}
+
+function AdminBottomTabs({ active, onSelect }) {
+  const insets = useSafeAreaInsets();
+  const tabs = [
+    { id: "home", label: "Home", icon: "🏠" },
+    { id: "trips", label: "Trips", icon: "🚗" },
+    { id: "live", label: "Live", icon: "📍" },
+  ];
+
+  return (
+    <View style={[styles.adminTabBar, { paddingBottom: insets.bottom }]}>
+      {tabs.map((tab) => (
+        <TouchableOpacity
+          key={tab.id}
+          style={[styles.adminTab, active === tab.id && styles.adminTabActive]}
+          onPress={() => onSelect(tab.id)}
+        >
+          <Text style={styles.adminTabIcon}>{tab.icon}</Text>
+          <Text style={[styles.adminTabText, active === tab.id && styles.adminTabTextActive]}>
+            {tab.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
   );
 }
 
@@ -216,7 +250,6 @@ export default function App() {
         .eq("id", s.user.id)
         .single();
       if (error) {
-        // Only sign out if profile has never loaded (first attempt)
         if (!profileLoadedRef.current) {
           await supabase.auth.signOut();
         }
@@ -225,16 +258,15 @@ export default function App() {
       if (data) {
         profileLoadedRef.current = true;
         setProfile(data);
-        setActiveTab(prev => prev ?? (data?.role === "admin" || data?.role === "caller" ? "overview" : "dashboard"));
+        // Default to "home" for admin/caller, "dashboard" for driver
+        setActiveTab(prev => prev ?? (data?.role === "admin" || data?.role === "caller" ? "home" : "dashboard"));
         registerForPushNotifications(s.user.id);
       }
     } catch (e) {
       console.log("loadProfile error:", e);
-      // Don't sign out on network errors if already loaded
     }
   }
 
-  // Check for OTA updates — download silently, apply on next launch
   useEffect(() => {
     async function checkForUpdates() {
       if (__DEV__) return;
@@ -242,7 +274,6 @@ export default function App() {
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
           await Updates.fetchUpdateAsync();
-          // Update applies automatically on next app launch — no reload loop
         }
       } catch (e) {
         console.log("Update check failed:", e);
@@ -269,7 +300,6 @@ export default function App() {
       if (event === "INITIAL_SESSION") return;
       setSession(session);
       if (session) {
-        // Only load profile if not already loaded (avoid re-trigger loops)
         if (!profileLoadedRef.current) {
           loadProfile(session);
         }
@@ -303,7 +333,6 @@ export default function App() {
       },
     );
 
-    // Notification listeners
     notificationListener.current =
       Notifications.addNotificationReceivedListener((notification) => {
         console.log("Notification received:", notification);
@@ -311,7 +340,6 @@ export default function App() {
 
     responseListener.current =
       Notifications.addNotificationResponseReceivedListener(() => {
-        // Handle geofence prompts or any driver notification — navigate to trips
         if (profile?.role === "driver") {
           setActiveTab("trips");
           setRefreshKey((k) => k + 1);
@@ -330,7 +358,6 @@ export default function App() {
     };
   }, []);
 
-  // Start/stop geofence monitoring based on profile role
   const geofenceStartedRef = useRef(false);
   useEffect(() => {
     if (profile?.role === "driver" && !geofenceStartedRef.current) {
@@ -375,28 +402,25 @@ export default function App() {
 
   function renderScreen() {
     if (isAdmin) {
+      // Bottom tabs
+      if (activeTab === "home") return <HomeScreen key={refreshKey} />;
+      if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} session={session} userRole={profile?.role} />;
+      if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
+      
+      // Hamburger menu screens
       if (activeTab === "overview") return <AdminOverview key={refreshKey} />;
       if (activeTab === "log") return <LogEntryScreen key={refreshKey} userRole={profile?.role} />;
       if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} userRole={profile?.role} />;
-      if (activeTab === "mileage")
-        return <MileageCostsScreen key={refreshKey} />;
-      if (activeTab === "availability")
-        return <AvailabilityScreen key={refreshKey} />;
-      if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
-      if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} session={session} userRole={profile?.role} />;
-      if (activeTab === "tracking")
-        return <AdminTrackingHealthScreen key={refreshKey} />;
-      if (activeTab === "geofence")
-        return <GeofenceActivityScreen key={refreshKey} />;
-      if (activeTab === "flights")
-        return <LiveFlightsScreen key={refreshKey} />;
+      if (activeTab === "mileage") return <MileageCostsScreen key={refreshKey} />;
+      if (activeTab === "availability") return <AvailabilityScreen key={refreshKey} />;
+      if (activeTab === "tracking") return <AdminTrackingHealthScreen key={refreshKey} />;
+      if (activeTab === "geofence") return <GeofenceActivityScreen key={refreshKey} />;
+      if (activeTab === "flights") return <LiveFlightsScreen key={refreshKey} />;
     } else {
-      if (activeTab === "dashboard")
-        return <DriverDashboard key={refreshKey} session={session} />;
+      if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips")
         return <MyTripsScreen key={refreshKey} session={session} navigation={{ navigate: (screen, params) => { if (screen === 'TripChat') setChatTrip(params); } }} />;
-      if (activeTab === "availability")
-        return <DriverAvailabilityScreen key={refreshKey} session={session} />;
+      if (activeTab === "availability") return <DriverAvailabilityScreen key={refreshKey} session={session} />;
     }
     return null;
   }
@@ -412,6 +436,7 @@ export default function App() {
             userRole={profile?.role}
           />
           <View style={styles.screen}>{renderScreen()}</View>
+          <AdminBottomTabs active={activeTab} onSelect={handleTabSelect} />
         </View>
       </SafeAreaProvider>
     );
@@ -508,6 +533,37 @@ const styles = StyleSheet.create({
   drawerLabel: { fontSize: 20, fontWeight: "700", color: colors.textTertiary },
   drawerLabelActive: { color: colors.primary },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
+  
+  // Admin bottom tabs
+  adminTabBar: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  adminTab: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  adminTabActive: {
+    borderTopWidth: 2,
+    borderTopColor: colors.primary,
+  },
+  adminTabIcon: {
+    fontSize: 20,
+  },
+  adminTabText: {
+    ...typography.labelSm,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  adminTabTextActive: {
+    color: colors.primary,
+  },
+
+  // Driver bottom tabs (unchanged)
   tabBar: {
     flexDirection: "row",
     borderTopWidth: 1,
