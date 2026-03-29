@@ -565,8 +565,8 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
   });
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
-    <ScrollView style={s.createContainer} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={100}>
+    <ScrollView style={s.createContainer} contentContainerStyle={{ paddingBottom: 300 }} keyboardShouldPersistTaps="handled">
       <View style={s.createHeader}>
         <TouchableOpacity onPress={onBack} style={s.backBtn}>
           <Text style={s.backText}>← Back</Text>
