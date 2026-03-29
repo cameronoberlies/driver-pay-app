@@ -28,7 +28,8 @@
       "extends": "production",
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "channel": "playstore"
     }
   },
   "submit": {

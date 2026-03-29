@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 import {
   View,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Modal,
 } from "react-native";
 
 import { supabase } from "../lib/supabase";
@@ -28,12 +29,17 @@ export default function DriverDashboard({ session }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [phoneBookVisible, setPhoneBookVisible] = useState(false);
+  const [weekExpanded, setWeekExpanded] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [nextTrip, setNextTrip] = useState(null);
+  const [countdown, setCountdown] = useState('');
+  const countdownRef = useRef(null);
 
   const fetchData = async () => {
     setError(false);
     const userId = session.user.id;
     try {
-      const [{ data: prof }, { data: ents }] = await withTimeout(
+      const [{ data: prof }, { data: ents }, { data: trips }] = await withTimeout(
         Promise.all([
           supabase
             .from("profiles")
@@ -45,11 +51,20 @@ export default function DriverDashboard({ session }) {
             .select("*")
             .eq("driver_id", userId)
             .order("date", { ascending: false }),
+          supabase
+            .from("trips")
+            .select("*")
+            .or(`driver_id.eq.${userId},second_driver_id.eq.${userId}`)
+            .eq("status", "pending")
+            .gte("scheduled_pickup", new Date().toISOString())
+            .order("scheduled_pickup", { ascending: true })
+            .limit(1),
         ]),
         TIMEOUT_MS,
       );
       setProfile(prof);
       setEntries(ents || []);
+      setNextTrip(trips?.[0] || null);
     } catch (err) {
       setError(true);
     } finally {
@@ -57,6 +72,44 @@ export default function DriverDashboard({ session }) {
       setRefreshing(false);
     }
   };
+
+  // Countdown timer
+  useEffect(() => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (!nextTrip?.scheduled_pickup) {
+      setCountdown('');
+      return;
+    }
+
+    function updateCountdown() {
+      const now = Date.now();
+      const pickup = new Date(nextTrip.scheduled_pickup).getTime();
+      const diff = pickup - now;
+
+      if (diff <= 0) {
+        setCountdown('NOW');
+        return;
+      }
+
+      const hours = Math.floor(diff / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        const remainHours = hours % 24;
+        setCountdown(`${days}d ${remainHours}h`);
+      } else if (hours > 0) {
+        setCountdown(`${hours}h ${minutes}m`);
+      } else {
+        setCountdown(`${minutes}m ${seconds}s`);
+      }
+    }
+
+    updateCountdown();
+    countdownRef.current = setInterval(updateCountdown, 1000);
+    return () => clearInterval(countdownRef.current);
+  }, [nextTrip]);
 
   useEffect(() => {
     fetchData();
@@ -119,6 +172,7 @@ export default function DriverDashboard({ session }) {
     );
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       contentContainerStyle={[styles.content, { maxWidth: 700, alignSelf: 'center', width: '100%' }]}
@@ -152,9 +206,7 @@ export default function DriverDashboard({ session }) {
 
         <View style={styles.headerRight}>
           <TouchableOpacity
-            onPress={() => {
-              /* We'll handle this next */
-            }}
+            onPress={() => setPhoneBookVisible(true)}
             style={styles.phoneBtn}
           >
             <Text style={styles.phoneIcon}>📞</Text>
@@ -166,8 +218,38 @@ export default function DriverDashboard({ session }) {
         </View>
       </View>
 
-      <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>THIS WEEK'S EARNINGS</Text>
+      {nextTrip && (
+        <View style={styles.countdownCard}>
+          <View style={styles.countdownTop}>
+            <Text style={styles.countdownLabel}>NEXT TRIP</Text>
+            <View style={styles.countdownTypeBadge}>
+              <Text style={styles.countdownTypeText}>
+                {nextTrip.trip_type === 'fly' ? '✈ FLY' : '🚗 DRIVE'}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.countdownCity}>{nextTrip.city}</Text>
+          <Text style={styles.countdownTime}>
+            {new Date(nextTrip.scheduled_pickup).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            {' at '}
+            {new Date(nextTrip.scheduled_pickup).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+          </Text>
+          <View style={styles.countdownTimerRow}>
+            <Text style={styles.countdownTimerValue}>{countdown}</Text>
+            <Text style={styles.countdownTimerLabel}>{countdown === 'NOW' ? '— time to go!' : 'until pickup'}</Text>
+          </View>
+        </View>
+      )}
+
+      <TouchableOpacity
+        style={styles.heroCard}
+        activeOpacity={0.7}
+        onPress={() => setWeekExpanded((v) => !v)}
+      >
+        <View style={styles.heroTop}>
+          <Text style={styles.heroLabel}>THIS WEEK'S EARNINGS</Text>
+          <Text style={styles.heroChevron}>{weekExpanded ? '▲' : '▼'}</Text>
+        </View>
         <Text style={styles.heroValue}>${weekPay.toFixed(2)}</Text>
         <View style={styles.heroRow}>
           <Text style={styles.heroStat}>{weekEntries.length} trips</Text>
@@ -176,7 +258,30 @@ export default function DriverDashboard({ session }) {
           <Text style={styles.heroDot}>·</Text>
           <Text style={styles.heroStat}>{weekMiles.toFixed(0)} mi</Text>
         </View>
-      </View>
+      </TouchableOpacity>
+
+      {weekExpanded && (
+        <View style={styles.weekBreakdown}>
+          {weekEntries.length === 0 ? (
+            <Text style={styles.weekEmptyText}>No trips this week yet</Text>
+          ) : (
+            weekEntries
+              .sort((a, b) => new Date(b.date) - new Date(a.date))
+              .map((e) => (
+                <View key={e.id} style={styles.weekRow}>
+                  <View style={styles.weekRowLeft}>
+                    <Text style={styles.weekCity}>{e.city}</Text>
+                    <Text style={styles.weekMeta}>
+                      {new Date(e.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {e.miles ? `  ·  ${e.miles} mi` : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.weekPay}>${Number(e.pay).toFixed(2)}</Text>
+                </View>
+              ))
+          )}
+        </View>
+      )}
 
       <UpcomingFlightCard driverName={profile?.name} />
 
@@ -200,7 +305,12 @@ export default function DriverDashboard({ session }) {
 
       <Text style={styles.sectionLabel}>RECENT TRIPS</Text>
       {entries.slice(0, 10).map((entry) => (
-        <View key={entry.id} style={styles.tripRow}>
+        <TouchableOpacity
+          key={entry.id}
+          style={styles.tripRow}
+          activeOpacity={0.7}
+          onPress={() => setSelectedEntry(entry)}
+        >
           <View style={styles.tripLeft}>
             <Text style={styles.tripCity}>{entry.city}</Text>
             <Text style={styles.tripMeta}>
@@ -216,9 +326,72 @@ export default function DriverDashboard({ session }) {
             <Text style={styles.tripPay}>${Number(entry.pay).toFixed(2)}</Text>
             {entry.recon_missed && <Text style={styles.missedTag}>MISSED</Text>}
           </View>
-        </View>
+        </TouchableOpacity>
       ))}
     </ScrollView>
+    {/* Trip Detail Modal */}
+    <Modal
+      visible={!!selectedEntry}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setSelectedEntry(null)}
+    >
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setSelectedEntry(null)}
+      >
+        <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+          <View style={styles.modalHandle} />
+          {selectedEntry && (
+            <>
+              <View style={styles.detailHeader}>
+                <Text style={styles.detailCity}>{selectedEntry.city}</Text>
+                <Text style={styles.detailPay}>${Number(selectedEntry.pay).toFixed(2)}</Text>
+              </View>
+              <View style={styles.detailCard}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>DATE</Text>
+                  <Text style={styles.detailValue}>
+                    {new Date(selectedEntry.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>HOURS</Text>
+                  <Text style={styles.detailValue}>{selectedEntry.hours ?? '—'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>MILES</Text>
+                  <Text style={styles.detailValue}>{selectedEntry.miles ?? '—'}</Text>
+                </View>
+                {selectedEntry.drive_time != null && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>GPS DRIVE TIME</Text>
+                    <Text style={styles.detailValue}>{selectedEntry.drive_time}h</Text>
+                  </View>
+                )}
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>CRM ID</Text>
+                  <Text style={styles.detailValue}>{selectedEntry.crm_id || '—'}</Text>
+                </View>
+                <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.detailLabel}>RECON</Text>
+                  <Text style={[styles.detailValue, selectedEntry.recon_missed && { color: colors.error }]}>
+                    {selectedEntry.recon_missed ? 'MISSED' : 'OK'}
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+
+    <DriverPhoneBookModal
+      visible={phoneBookVisible}
+      onClose={() => setPhoneBookVisible(false)}
+    />
+  </>
   );
 }
 
@@ -285,10 +458,68 @@ const styles = StyleSheet.create({
   phoneIcon: {
     fontSize: 18,
   },
+  // Countdown
+  countdownCard: {
+    ...components.cardAccent(colors.info),
+    padding: spacing.xxl,
+    marginBottom: spacing.md,
+  },
+  countdownTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  countdownLabel: {
+    ...typography.labelSm,
+    fontSize: 10,
+    color: colors.info,
+    letterSpacing: 2.5,
+  },
+  countdownTypeBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.infoDim,
+  },
+  countdownTypeText: {
+    ...typography.captionSm,
+    color: colors.info,
+    fontWeight: '600',
+  },
+  countdownCity: {
+    ...typography.h1,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  countdownTime: {
+    ...typography.bodySm,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
+  countdownTimerRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+  },
+  countdownTimerValue: {
+    ...typography.displayMd,
+    color: colors.info,
+  },
+  countdownTimerLabel: {
+    ...typography.bodySm,
+    color: colors.textTertiary,
+  },
+
   heroCard: {
     ...components.cardAccent(colors.primary),
     padding: spacing.xxl,
-    marginBottom: spacing.xxxl,
+    marginBottom: spacing.md,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   heroLabel: {
     ...typography.labelSm,
@@ -296,6 +527,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     letterSpacing: 2.5,
     marginBottom: spacing.sm,
+  },
+  heroChevron: {
+    fontSize: 12,
+    color: colors.primary,
   },
   heroValue: {
     ...typography.displayLg,
@@ -393,6 +628,108 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginTop: spacing.xs,
   },
+  // Week breakdown
+  weekBreakdown: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.xxxl,
+  },
+  weekEmptyText: {
+    ...typography.bodySm,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: spacing.md,
+  },
+  weekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  weekRowLeft: {
+    flex: 1,
+  },
+  weekCity: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  weekMeta: {
+    ...typography.captionSm,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  weekPay: {
+    ...typography.h3,
+    color: colors.primary,
+  },
+
+  // Trip detail modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.xxl,
+    paddingBottom: spacing.xxxxl,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: colors.borderLight,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  detailCity: {
+    ...typography.h1,
+    color: colors.textPrimary,
+  },
+  detailPay: {
+    ...typography.displaySm,
+    color: colors.primary,
+  },
+  detailCard: {
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  detailLabel: {
+    ...typography.labelSm,
+    color: colors.textTertiary,
+    letterSpacing: 1.5,
+  },
+  detailValue: {
+    ...typography.body,
+    color: colors.textPrimary,
+  },
+
   errorText: {
     ...components.errorText,
   },

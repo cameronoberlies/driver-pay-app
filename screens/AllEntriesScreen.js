@@ -2,7 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, RefreshControl, ActivityIndicator, Modal, ScrollView,
+  Platform, Alert,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+let FileSystem = null;
+let Sharing = null;
+try {
+  FileSystem = require('expo-file-system');
+  Sharing = require('expo-sharing');
+} catch (e) {
+  console.log('expo-file-system or expo-sharing not available');
+}
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
 import useResponsive from '../lib/useResponsive';
@@ -18,39 +28,35 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-const DATE_RANGES = [
-  { id: 'all', label: 'ALL TIME' },
-  { id: '1d', label: 'TODAY' },
-  { id: '1w', label: '1 WEEK' },
-  { id: '1m', label: '1 MONTH' },
-  { id: '6m', label: '6 MONTHS' },
-  { id: '1y', label: '1 YEAR' },
-  { id: 'custom', label: 'CUSTOM' },
-];
-
-function getDateRangeStart(rangeId) {
-  if (rangeId === 'all') return null;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  switch (rangeId) {
-    case '1d': return now;
-    case '1w': now.setDate(now.getDate() - 7); return now;
-    case '1m': now.setMonth(now.getMonth() - 1); return now;
-    case '6m': now.setMonth(now.getMonth() - 6); return now;
-    case '1y': now.setFullYear(now.getFullYear() - 1); return now;
-    default: return null;
-  }
-}
-
-function formatInputDate(date) {
+function toDateString(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
-function getDateRangeLabel(rangeId) {
-  return DATE_RANGES.find(r => r.id === rangeId)?.label ?? 'ALL TIME';
+function toDisplayDate(date) {
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+}
+
+const QUICK_RANGES = [
+  { id: 'all', label: 'ALL' },
+  { id: '1w', label: '1W' },
+  { id: '1m', label: '1M' },
+  { id: '6m', label: '6M' },
+];
+
+function getQuickRange(rangeId) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  switch (rangeId) {
+    case '1w': { const s = new Date(now); s.setDate(s.getDate() - 7); return { from: s, to: end }; }
+    case '1m': { const s = new Date(now); s.setMonth(s.getMonth() - 1); return { from: s, to: end }; }
+    case '6m': { const s = new Date(now); s.setMonth(s.getMonth() - 6); return { from: s, to: end }; }
+    default: return null;
+  }
 }
 
 export default function AllEntriesScreen() {
@@ -62,10 +68,17 @@ export default function AllEntriesScreen() {
   const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
   const [filterDriver, setFilterDriver] = useState('all');
-  const [dateRange, setDateRange] = useState('all');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Date range state
+  const [quickRange, setQuickRange] = useState('all');
+  const [dateFrom, setDateFrom] = useState(null); // Date object or null
+  const [dateTo, setDateTo] = useState(null);
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
+
+  // CSV export
+  const [exporting, setExporting] = useState(false);
 
   async function load() {
     setError(false);
@@ -93,7 +106,17 @@ export default function AllEntriesScreen() {
   const drivers = profiles.filter(p => p.role === 'driver');
 
   const filtered = useMemo(() => {
-    const rangeStart = dateRange === 'custom' ? null : getDateRangeStart(dateRange);
+    // Determine effective date range
+    let effectiveFrom = dateFrom ? toDateString(dateFrom) : null;
+    let effectiveTo = dateTo ? toDateString(dateTo) : null;
+
+    if (quickRange !== 'all' && quickRange !== 'custom') {
+      const range = getQuickRange(quickRange);
+      if (range) {
+        effectiveFrom = toDateString(range.from);
+        effectiveTo = toDateString(range.to);
+      }
+    }
 
     return entries.filter(e => {
       if (filterDriver !== 'all' && e.driver_id !== filterDriver) return false;
@@ -109,43 +132,122 @@ export default function AllEntriesScreen() {
       }
 
       const entryDate = e.date;
-      if (dateRange === 'custom') {
-        if (customFrom && entryDate < customFrom) return false;
-        if (customTo && entryDate > customTo) return false;
-      } else if (rangeStart) {
-        if (entryDate < formatInputDate(rangeStart)) return false;
-      }
+      if (effectiveFrom && entryDate < effectiveFrom) return false;
+      if (effectiveTo && entryDate > effectiveTo) return false;
 
       return true;
     });
-  }, [entries, profiles, filterDriver, search, dateRange, customFrom, customTo]);
+  }, [entries, profiles, filterDriver, search, quickRange, dateFrom, dateTo]);
 
-  function handleDateRange(id) {
-    setDateRange(id);
-    if (id !== 'custom') {
-      setCustomFrom('');
-      setCustomTo('');
+  function handleQuickRange(id) {
+    setQuickRange(id);
+    if (id !== 'custom' && id !== 'all') {
+      const range = getQuickRange(id);
+      if (range) {
+        setDateFrom(range.from);
+        setDateTo(range.to);
+      }
+    } else if (id === 'all') {
+      setDateFrom(null);
+      setDateTo(null);
+    }
+  }
+
+  function handleFromChange(event, selectedDate) {
+    if (Platform.OS === 'android') setShowFromPicker(false);
+    if (selectedDate) {
+      setDateFrom(selectedDate);
+      setQuickRange('custom');
+    }
+  }
+
+  function handleToChange(event, selectedDate) {
+    if (Platform.OS === 'android') setShowToPicker(false);
+    if (selectedDate) {
+      setDateTo(selectedDate);
+      setQuickRange('custom');
     }
   }
 
   function clearFilters() {
     setFilterDriver('all');
-    setDateRange('all');
+    setQuickRange('all');
+    setDateFrom(null);
+    setDateTo(null);
     setSearch('');
-    setCustomFrom('');
-    setCustomTo('');
   }
 
   const activeFilterCount =
     (filterDriver !== 'all' ? 1 : 0) +
-    (dateRange !== 'all' ? 1 : 0) +
+    (quickRange !== 'all' ? 1 : 0) +
     (search.length > 0 ? 1 : 0);
 
   const selectedDriverName = filterDriver === 'all'
     ? null
     : drivers.find(d => d.id === filterDriver)?.name;
 
-  if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
+  // ── CSV EXPORT ──
+
+  async function handleExportCSV() {
+    if (!FileSystem || !Sharing) {
+      Alert.alert('Not Available', 'CSV export requires an app update. Please update from the App Store.');
+      return;
+    }
+    if (filtered.length === 0) {
+      Alert.alert('No Data', 'No entries to export with the current filters.');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const headers = ['Date', 'Driver', 'City', 'CRM ID', 'Hours', 'Miles', 'Drive Time (GPS)', 'Pay', 'Recon'];
+      const rows = filtered.map(e => {
+        const driver = profiles.find(p => p.id === e.driver_id);
+        return [
+          e.date,
+          driver?.name ?? 'Unknown',
+          e.city ?? '',
+          e.crm_id ?? '',
+          e.hours ?? '',
+          e.miles ?? 0,
+          e.drive_time ?? '',
+          Number(e.pay || 0).toFixed(2),
+          e.recon_missed ? 'MISSED' : 'OK',
+        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+      });
+
+      const csv = [headers.join(','), ...rows].join('\n');
+
+      // Build filename with date range
+      let fileLabel = 'all';
+      if (dateFrom && dateTo) {
+        fileLabel = `${toDateString(dateFrom)}_to_${toDateString(dateTo)}`;
+      } else if (dateFrom) {
+        fileLabel = `from_${toDateString(dateFrom)}`;
+      } else if (dateTo) {
+        fileLabel = `to_${toDateString(dateTo)}`;
+      }
+      if (selectedDriverName) {
+        fileLabel += `_${selectedDriverName.replace(/\s+/g, '-')}`;
+      }
+
+      const fileName = `entries_${fileLabel}.csv`;
+      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(filePath, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(filePath, { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' });
+    } catch (e) {
+      if (e.message !== 'User did not share') {
+        Alert.alert('Export Failed', e.message || 'Something went wrong');
+      }
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // ── RENDER ──
+
+  if (loading) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   if (error) return (
     <View style={s.center}>
@@ -159,14 +261,14 @@ export default function AllEntriesScreen() {
   return (
     <View style={s.container}>
       <View style={isTablet ? { alignSelf: 'center', maxWidth: 700, width: '100%', flex: 1 } : { flex: 1 }}>
-      {/* Top bar: search + filter button */}
+      {/* Top bar: search + filter + export */}
       <View style={s.topBar}>
         <TextInput
           style={s.search}
           value={search}
           onChangeText={setSearch}
           placeholder="Search city, CRM ID, driver..."
-          placeholderTextColor="#555"
+          placeholderTextColor={colors.textMuted}
         />
         <TouchableOpacity
           style={[s.filterBtn, activeFilterCount > 0 && s.filterBtnActive]}
@@ -181,12 +283,18 @@ export default function AllEntriesScreen() {
       {/* Active filter tags */}
       {activeFilterCount > 0 && (
         <View style={s.tagRow}>
-          {dateRange !== 'all' && (
+          {quickRange !== 'all' && (
             <View style={s.tag}>
               <Text style={s.tagText}>
-                {dateRange === 'custom' ? `${customFrom || '...'} – ${customTo || '...'}` : getDateRangeLabel(dateRange)}
+                {dateFrom && dateTo
+                  ? `${toDisplayDate(dateFrom)} – ${toDisplayDate(dateTo)}`
+                  : dateFrom
+                  ? `From ${toDisplayDate(dateFrom)}`
+                  : dateTo
+                  ? `To ${toDisplayDate(dateTo)}`
+                  : quickRange.toUpperCase()}
               </Text>
-              <TouchableOpacity onPress={() => { setDateRange('all'); setCustomFrom(''); setCustomTo(''); }}>
+              <TouchableOpacity onPress={() => { setQuickRange('all'); setDateFrom(null); setDateTo(null); }}>
                 <Text style={s.tagX}> ✕</Text>
               </TouchableOpacity>
             </View>
@@ -213,14 +321,23 @@ export default function AllEntriesScreen() {
         </View>
       )}
 
-      {/* Result count */}
-      <Text style={s.resultCount}>{filtered.length} of {entries.length} entries</Text>
+      {/* Result count + Export */}
+      <View style={s.resultRow}>
+        <Text style={s.resultCount}>{filtered.length} of {entries.length} entries</Text>
+        <TouchableOpacity
+          style={[s.exportBtn, exporting && { opacity: 0.5 }]}
+          onPress={handleExportCSV}
+          disabled={exporting}
+        >
+          <Text style={s.exportBtnText}>{exporting ? 'EXPORTING...' : 'EXPORT CSV'}</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Entry list */}
       <FlatList
         data={filtered}
         keyExtractor={e => e.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         contentContainerStyle={s.list}
         ListEmptyComponent={<Text style={s.empty}>No entries match your filters.</Text>}
         numColumns={isTablet ? 2 : 1}
@@ -277,45 +394,85 @@ export default function AllEntriesScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Date Range */}
               <Text style={s.sectionLabel}>DATE RANGE</Text>
+
+              {/* Quick presets */}
               <View style={s.pillGrid}>
-                {DATE_RANGES.map(r => (
+                {QUICK_RANGES.map(r => (
                   <TouchableOpacity
                     key={r.id}
-                    style={[s.modalPill, dateRange === r.id && s.modalPillActive]}
-                    onPress={() => handleDateRange(r.id)}
+                    style={[s.modalPill, quickRange === r.id && s.modalPillActive]}
+                    onPress={() => handleQuickRange(r.id)}
                   >
-                    <Text style={[s.modalPillText, dateRange === r.id && s.modalPillTextActive]}>
+                    <Text style={[s.modalPillText, quickRange === r.id && s.modalPillTextActive]}>
                       {r.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
-              {dateRange === 'custom' && (
-                <View style={s.customDateRow}>
-                  <View style={s.dateInputWrap}>
-                    <Text style={s.dateLabel}>FROM</Text>
-                    <TextInput
-                      style={s.dateInput}
-                      value={customFrom}
-                      onChangeText={setCustomFrom}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#333"
-                      maxLength={10}
-                    />
-                  </View>
-                  <Text style={s.dateDash}>–</Text>
-                  <View style={s.dateInputWrap}>
-                    <Text style={s.dateLabel}>TO</Text>
-                    <TextInput
-                      style={s.dateInput}
-                      value={customTo}
-                      onChangeText={setCustomTo}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#333"
-                      maxLength={10}
-                    />
-                  </View>
+              {/* From / To date pickers */}
+              <View style={s.datePickerRow}>
+                <View style={s.datePickerCol}>
+                  <Text style={s.dateLabel}>FROM</Text>
+                  <TouchableOpacity
+                    style={[s.dateBtn, dateFrom && s.dateBtnActive]}
+                    onPress={() => setShowFromPicker(true)}
+                  >
+                    <Text style={[s.dateBtnText, dateFrom && s.dateBtnTextActive]}>
+                      {dateFrom ? toDisplayDate(dateFrom) : 'Select date'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={s.dateDash}>–</Text>
+                <View style={s.datePickerCol}>
+                  <Text style={s.dateLabel}>TO</Text>
+                  <TouchableOpacity
+                    style={[s.dateBtn, dateTo && s.dateBtnActive]}
+                    onPress={() => setShowToPicker(true)}
+                  >
+                    <Text style={[s.dateBtnText, dateTo && s.dateBtnTextActive]}>
+                      {dateTo ? toDisplayDate(dateTo) : 'Select date'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* iOS inline pickers */}
+              {showFromPicker && (
+                <View style={s.pickerWrap}>
+                  <DateTimePicker
+                    value={dateFrom || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    themeVariant="dark"
+                    textColor="#fff"
+                    onChange={handleFromChange}
+                    maximumDate={dateTo || undefined}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity style={s.pickerDone} onPress={() => setShowFromPicker(false)}>
+                      <Text style={s.pickerDoneText}>DONE</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {showToPicker && (
+                <View style={s.pickerWrap}>
+                  <DateTimePicker
+                    value={dateTo || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    themeVariant="dark"
+                    textColor="#fff"
+                    onChange={handleToChange}
+                    minimumDate={dateFrom || undefined}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity style={s.pickerDone} onPress={() => setShowToPicker(false)}>
+                      <Text style={s.pickerDoneText}>DONE</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -377,8 +534,11 @@ const s = StyleSheet.create({
   tagX: { ...typography.captionSm, fontWeight: '700', color: colors.primary },
   clearAll: { ...typography.captionSm, fontWeight: '700', color: colors.error, letterSpacing: 1 },
 
-  // Result count
-  resultCount: { ...typography.captionSm, color: colors.textTertiary, paddingHorizontal: spacing.xl, marginBottom: spacing.sm },
+  // Result count + export
+  resultRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.xl, marginBottom: spacing.sm },
+  resultCount: { ...typography.captionSm, color: colors.textTertiary },
+  exportBtn: { borderWidth: 1, borderColor: colors.successBorder, backgroundColor: colors.successDim, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  exportBtnText: { ...typography.labelSm, color: colors.success, letterSpacing: 1 },
 
   // List
   list: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxxxl },
@@ -405,7 +565,7 @@ const s = StyleSheet.create({
 
   // Modal
   modalOverlay: { ...components.modalOverlay },
-  modalSheet: { ...components.modalSheet, maxHeight: '80%' },
+  modalSheet: { ...components.modalSheet, maxHeight: '85%' },
   modalHandle: { ...components.modalHandle },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xxl },
   modalTitle: { ...typography.h3, fontWeight: '900', color: colors.textPrimary, letterSpacing: 2 },
@@ -414,7 +574,7 @@ const s = StyleSheet.create({
   // Section labels
   sectionLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 3, marginBottom: spacing.md, marginTop: spacing.sm },
 
-  // Pill grid (wrapping)
+  // Pill grid
   pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
   modalPill: { ...components.pill, borderRadius: radius.sm, paddingVertical: spacing.md, backgroundColor: colors.bg },
   modalPillActive: { ...components.pillActive },
@@ -424,12 +584,18 @@ const s = StyleSheet.create({
   modalPillTextActive: { ...components.pillTextActive },
   modalPillDriverTextActive: { color: colors.info },
 
-  // Custom date inputs
-  customDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg, gap: spacing.sm },
-  dateInputWrap: { flex: 1 },
+  // Date picker
+  datePickerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg, gap: spacing.sm },
+  datePickerCol: { flex: 1 },
   dateLabel: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 2, marginBottom: spacing.xs },
-  dateInput: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, color: colors.textPrimary, paddingHorizontal: spacing.md, paddingVertical: spacing.md, ...typography.bodySm, borderRadius: radius.sm },
+  dateBtn: { backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
+  dateBtnActive: { borderColor: colors.primary },
+  dateBtnText: { ...typography.bodySm, color: colors.textMuted },
+  dateBtnTextActive: { color: colors.textPrimary },
   dateDash: { color: colors.textTertiary, fontSize: 16, marginTop: spacing.lg },
+  pickerWrap: { backgroundColor: colors.surfaceElevated, borderRadius: radius.md, marginBottom: spacing.md, overflow: 'hidden' },
+  pickerDone: { alignItems: 'center', paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  pickerDoneText: { ...typography.label, color: colors.primary },
 
   // Apply button
   applyBtn: { ...components.buttonPrimary, borderRadius: radius.sm, marginTop: spacing.md },

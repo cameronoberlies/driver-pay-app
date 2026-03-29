@@ -37,6 +37,7 @@ import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
 import TripChatScreen from "./screens/TripChatScreen";
 import HomeScreen from "./screens/HomeScreen";
+import ManageUsersModal from "./screens/ManageUsersModal";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -235,6 +236,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [chatTrip, setChatTrip] = useState(null);
+  const [showManageUsers, setShowManageUsers] = useState(false);
 
   const appState = useRef(AppState.currentState);
   const notificationListener = useRef();
@@ -403,7 +405,7 @@ export default function App() {
   function renderScreen() {
     if (isAdmin) {
       // Bottom tabs
-      if (activeTab === "home") return <HomeScreen key={refreshKey} />;
+      if (activeTab === "home") return <HomeScreen key={refreshKey} onManageUsers={() => setShowManageUsers(true)} />;
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} session={session} userRole={profile?.role} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
       
@@ -437,6 +439,11 @@ export default function App() {
           />
           <View style={styles.screen}>{renderScreen()}</View>
           <AdminBottomTabs active={activeTab} onSelect={handleTabSelect} />
+          <ManageUsersModal
+            visible={showManageUsers}
+            onClose={() => setShowManageUsers(false)}
+            session={session}
+          />
         </View>
       </SafeAreaProvider>
     );
@@ -484,16 +491,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   adminBarTitle: {
-    ...typography.label,
+    fontSize: 20,
+    fontWeight: "800",
     color: colors.textPrimary,
+    letterSpacing: 0.5,
   },
   adminBarRight: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
   signOutBtn: {
     borderWidth: 1,
     borderColor: colors.borderLight,
     borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   signOutText: {
     ...typography.labelSm,

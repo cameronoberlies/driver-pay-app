@@ -28,6 +28,20 @@ const STATUS_COLORS = {
   finalized: colors.textTertiary,
 };
 
+// Fire-and-forget: notify driver(s) of new trip assignment
+function notifyTripAssigned(tripId, driverIds, city, scheduledPickup) {
+  const ids = driverIds.filter(Boolean);
+  if (ids.length === 0) return;
+  fetch('https://yincjogkjvotupzgetqg.supabase.co/functions/v1/notify-trip-assigned', {
+    method: 'POST',
+    headers: {
+      apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ trip_id: tripId, driver_ids: ids, city, scheduled_pickup: scheduledPickup }),
+  }).catch(() => {});
+}
+
 export default function AdminTripsScreen({ session, userRole }) {
   const isReadOnly = userRole === 'caller';
   const { isTablet } = useResponsive();
@@ -38,8 +52,10 @@ export default function AdminTripsScreen({ session, userRole }) {
   const [view, setView] = useState('active'); // 'active' | 'all' | 'create'
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [chatTrip, setChatTrip] = useState(null);
+  const [availability, setAvailability] = useState([]);
 
   // Load trips + profiles
   useEffect(() => {
@@ -65,9 +81,10 @@ export default function AdminTripsScreen({ session, userRole }) {
 
   async function loadData() {
     setLoading(true);
-    const [tripsRes, profilesRes] = await Promise.all([
+    const [tripsRes, profilesRes, availRes] = await Promise.all([
       supabase.from('trips').select('*').order('scheduled_pickup', { ascending: false }),
       supabase.from('profiles').select('*'),
+      supabase.from('availability').select('*'),
     ]);
 
     if (tripsRes.error) console.error('Error loading trips:', tripsRes.error);
@@ -75,6 +92,8 @@ export default function AdminTripsScreen({ session, userRole }) {
 
     if (profilesRes.error) console.error('Error loading profiles:', profilesRes.error);
     else setAllProfiles(profilesRes.data || []);
+
+    setAvailability(availRes.data || []);
 
     setLoading(false);
   }
@@ -149,6 +168,8 @@ export default function AdminTripsScreen({ session, userRole }) {
     return (
       <CreateTripView
         drivers={allProfiles.filter((p) => p.role === 'driver')}
+        allTrips={trips}
+        availability={availability}
         onBack={() => setView('active')}
         onCreated={(trip) => {
           setTrips([trip, ...trips]);
@@ -214,6 +235,8 @@ export default function AdminTripsScreen({ session, userRole }) {
               setSelectedTrip(trip);
               if (trip.status === 'completed') {
                 setShowFinalizeModal(true);
+              } else if (trip.status === 'pending' || trip.status === 'in_progress') {
+                setShowReassignModal(true);
               }
             }}
             onChatPress={(t) => setChatTrip(t)}
@@ -260,6 +283,25 @@ export default function AdminTripsScreen({ session, userRole }) {
             setShowFinalizeModal(false);
             setSelectedTrip(null);
           }}
+        />
+      )}
+
+      {/* Reassign Modal */}
+      {showReassignModal && selectedTrip && (
+        <ReassignTripModal
+          trip={selectedTrip}
+          allProfiles={allProfiles}
+          onClose={() => {
+            setShowReassignModal(false);
+            setSelectedTrip(null);
+          }}
+          onSaved={(updatedTrip) => {
+            setTrips(trips.map((t) => (t.id === updatedTrip.id ? updatedTrip : t)));
+            setShowReassignModal(false);
+            setSelectedTrip(null);
+          }}
+          allTrips={trips}
+          availability={availability}
         />
       )}
     </View>
@@ -363,8 +405,72 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPre
   );
 }
 
+// ── CONFLICT CHECKER ──────────────────────────────────────────────────────────────────────────────
+const DAYS_OF_WEEK = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+function getDriverWarnings(driverId, scheduledDate, allTrips, availabilityData, excludeTripId) {
+  const warnings = [];
+  if (!driverId || !scheduledDate) return warnings;
+
+  const tripDate = new Date(scheduledDate);
+  const dayName = DAYS_OF_WEEK[tripDate.getDay()];
+  const dateStr = tripDate.toISOString().split('T')[0];
+
+  // Check availability
+  const avail = availabilityData.find((a) => a.driver_id === driverId && a.day === dayName);
+  if (avail && avail.available === false) {
+    warnings.push({ type: 'unavailable', message: `Marked unavailable on ${dayName}s` });
+  }
+
+  // Check overlapping trips on same day
+  const sameDayTrips = allTrips.filter((t) => {
+    if (t.id === excludeTripId) return false;
+    if (t.status === 'finalized' || t.status === 'completed') return false;
+    if (t.driver_id !== driverId && t.second_driver_id !== driverId) return false;
+    if (!t.scheduled_pickup) return false;
+    const tDate = new Date(t.scheduled_pickup).toISOString().split('T')[0];
+    return tDate === dateStr;
+  });
+
+  if (sameDayTrips.length > 0) {
+    const cities = sameDayTrips.map((t) => t.city).join(', ');
+    warnings.push({ type: 'conflict', message: `Already assigned ${sameDayTrips.length} trip${sameDayTrips.length > 1 ? 's' : ''} that day (${cities})` });
+  }
+
+  return warnings;
+}
+
+function DriverWarnings({ warnings }) {
+  if (!warnings || warnings.length === 0) return null;
+  return (
+    <View style={{ marginTop: spacing.sm, marginBottom: spacing.xs }}>
+      {warnings.map((w, i) => (
+        <View key={i} style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: w.type === 'unavailable' ? colors.errorDim : colors.warningDim,
+          borderWidth: 1,
+          borderColor: w.type === 'unavailable' ? colors.errorBorder : colors.warningBorder,
+          borderRadius: radius.sm,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.xs,
+          marginBottom: spacing.xs,
+        }}>
+          <Text style={{
+            ...typography.captionSm,
+            fontWeight: '600',
+            color: w.type === 'unavailable' ? colors.error : colors.warning,
+          }}>
+            {w.type === 'unavailable' ? '⚠ ' : '⏰ '}{w.message}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ── CREATE TRIP VIEW ───────────────────────────────────────────────────────────────────────────────
-function CreateTripView({ drivers, onBack, onCreated }) {
+function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) {
   const now = new Date();
   const [form, setForm] = useState({
     driver_id: drivers[0]?.id || '',
@@ -444,6 +550,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
       return;
     }
 
+    notifyTripAssigned(data.id, [form.driver_id, form.second_driver_id], form.city, form.scheduled_pickup.toISOString());
     onCreated(data);
   }
 
@@ -459,7 +566,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
-    <ScrollView style={s.createContainer}>
+    <ScrollView style={s.createContainer} keyboardShouldPersistTaps="handled">
       <View style={s.createHeader}>
         <TouchableOpacity onPress={onBack} style={s.backBtn}>
           <Text style={s.backText}>← Back</Text>
@@ -523,6 +630,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
               </TouchableOpacity>
             ))}
           </ScrollView>
+          <DriverWarnings warnings={getDriverWarnings(form.driver_id, form.scheduled_pickup, allTrips, availability, null)} />
         </View>
 
         {form.trip_type === 'drive' && (
@@ -551,6 +659,7 @@ function CreateTripView({ drivers, onBack, onCreated }) {
                   </TouchableOpacity>
                 ))}
             </ScrollView>
+            {form.second_driver_id ? <DriverWarnings warnings={getDriverWarnings(form.second_driver_id, form.scheduled_pickup, allTrips, availability, null)} /> : null}
           </View>
         )}
 
@@ -669,6 +778,143 @@ function CreateTripView({ drivers, onBack, onCreated }) {
       </View>
     </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+// ── REASSIGN TRIP MODAL ────────────────────────────────────────────────────────────────────────────
+function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, availability }) {
+  const drivers = allProfiles.filter((p) => p.role === 'driver');
+  const [driverId, setDriverId] = useState(trip.driver_id);
+  const [secondDriverId, setSecondDriverId] = useState(trip.second_driver_id || null);
+  const [saving, setSaving] = useState(false);
+
+  const pickupTime = trip.scheduled_pickup
+    ? new Date(trip.scheduled_pickup).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : null;
+
+  async function handleSave() {
+    if (driverId === trip.driver_id && secondDriverId === trip.second_driver_id) {
+      onClose();
+      return;
+    }
+
+    setSaving(true);
+    const { data, error } = await supabase
+      .from('trips')
+      .update({
+        driver_id: driverId,
+        second_driver_id: secondDriverId || null,
+      })
+      .eq('id', trip.id)
+      .select()
+      .single();
+
+    setSaving(false);
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+    // Notify newly assigned drivers
+    const newDrivers = [driverId, secondDriverId].filter((id) => id && id !== trip.driver_id && id !== trip.second_driver_id);
+    if (newDrivers.length > 0) {
+      notifyTripAssigned(trip.id, newDrivers, trip.city, trip.scheduled_pickup);
+    }
+
+    onSaved(data);
+  }
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={s.modalOverlay}>
+        <View style={s.modalContainer}>
+          <Text style={s.modalTitle}>Trip Details</Text>
+          <Text style={s.modalSubtitle}>
+            {trip.city}{trip.crm_id ? ` · ${trip.crm_id}` : ''}
+          </Text>
+
+          <ScrollView style={{ maxHeight: 400 }}>
+            {/* Trip info */}
+            <View style={s.reassignInfo}>
+              <View style={s.reassignRow}>
+                <Text style={s.reassignLabel}>STATUS</Text>
+                <Text style={s.reassignValue}>{trip.status === 'in_progress' ? 'IN PROGRESS' : trip.status.toUpperCase()}</Text>
+              </View>
+              <View style={s.reassignRow}>
+                <Text style={s.reassignLabel}>TYPE</Text>
+                <Text style={s.reassignValue}>{trip.trip_type === 'fly' ? 'Fly' : 'Drive'}</Text>
+              </View>
+              {pickupTime && (
+                <View style={s.reassignRow}>
+                  <Text style={s.reassignLabel}>PICKUP</Text>
+                  <Text style={s.reassignValue}>{pickupTime}</Text>
+                </View>
+              )}
+              {trip.notes && (
+                <View style={s.reassignRow}>
+                  <Text style={s.reassignLabel}>NOTES</Text>
+                  <Text style={[s.reassignValue, { flex: 1, textAlign: 'right' }]}>{trip.notes}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Driver 1 */}
+            <Text style={s.reassignSectionLabel}>ASSIGN DRIVER</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {drivers.map((d) => (
+                <TouchableOpacity
+                  key={d.id}
+                  style={[s.driverPill, driverId === d.id && s.driverPillActive]}
+                  onPress={() => setDriverId(d.id)}
+                >
+                  <Text style={[s.driverPillText, driverId === d.id && s.driverPillTextActive]}>
+                    {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <DriverWarnings warnings={getDriverWarnings(driverId, trip.scheduled_pickup, allTrips, availability, trip.id)} />
+
+            {/* Driver 2 */}
+            <Text style={[s.reassignSectionLabel, { marginTop: spacing.xl }]}>SECOND DRIVER (OPTIONAL)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[s.driverPill, !secondDriverId && s.driverPillActive]}
+                onPress={() => setSecondDriverId(null)}
+              >
+                <Text style={[s.driverPillText, !secondDriverId && s.driverPillTextActive]}>None</Text>
+              </TouchableOpacity>
+              {drivers.filter((d) => d.id !== driverId).map((d) => (
+                <TouchableOpacity
+                  key={d.id}
+                  style={[s.driverPill, secondDriverId === d.id && s.driverPillActive]}
+                  onPress={() => setSecondDriverId(d.id)}
+                >
+                  <Text style={[s.driverPillText, secondDriverId === d.id && s.driverPillTextActive]}>
+                    {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            {secondDriverId ? <DriverWarnings warnings={getDriverWarnings(secondDriverId, trip.scheduled_pickup, allTrips, availability, trip.id)} /> : null}
+          </ScrollView>
+
+          <View style={s.modalButtons}>
+            <TouchableOpacity style={s.modalBtnCancel} onPress={onClose}>
+              <Text style={s.modalBtnCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.modalBtnSave, saving && s.disabled]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              <Text style={s.modalBtnSaveText}>
+                {saving ? 'Saving...' : 'Save Changes →'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1189,6 +1435,40 @@ const s = StyleSheet.create({
   driverPillTextActive: {
     color: colors.primary,
   },
+
+  // Reassign modal
+  reassignInfo: {
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  reassignRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  reassignLabel: {
+    ...typography.labelSm,
+    color: colors.textTertiary,
+    letterSpacing: 1.5,
+  },
+  reassignValue: {
+    ...typography.body,
+    color: colors.textPrimary,
+  },
+  reassignSectionLabel: {
+    ...typography.label,
+    letterSpacing: 2,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+  },
+
   segmentControl: {
     flexDirection: 'row',
     borderWidth: 1,

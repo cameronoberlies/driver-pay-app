@@ -23,7 +23,7 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-function PendingRow({ entry, driverName, driverWillingToFly, onComplete }) {
+function PendingRow({ entry, driverName, driverWillingToFly, onComplete, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -116,6 +116,22 @@ function PendingRow({ entry, driverName, driverWillingToFly, onComplete }) {
           >
             {saving ? <ActivityIndicator color={colors.textPrimary} /> : <Text style={p.completeBtnText}>COMPLETE ENTRY →</Text>}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={p.deleteBtn}
+            onPress={() => {
+              Alert.alert(
+                'Delete Entry',
+                `Delete this pending entry for ${driverName}? This cannot be undone.`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: () => onDelete(entry.id) },
+                ]
+              );
+            }}
+          >
+            <Text style={p.deleteBtnText}>DELETE ENTRY</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -177,6 +193,15 @@ export default function LogEntryScreen() {
     setPending(prev => prev.filter(e => e.id !== updated.id));
   }
 
+  async function handlePendingDelete(entryId) {
+    const { error } = await supabase.from('entries').delete().eq('id', entryId);
+    if (error) {
+      Alert.alert('Failed', error.message);
+      return;
+    }
+    setPending(prev => prev.filter(e => e.id !== entryId));
+  }
+
   async function handleSave() {
     if (!form.driver_id || !form.pay || !form.city || !form.crm_id) {
       Alert.alert('Missing Fields', 'Driver, pay, city, and CRM ID are required.');
@@ -214,7 +239,7 @@ export default function LogEntryScreen() {
   );
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={100}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={100}>
     <ScrollView style={s.container} contentContainerStyle={[s.content, isTablet && { alignSelf: 'center', maxWidth: 700, width: '100%' }]} keyboardShouldPersistTaps="handled">
 
       {pending.length > 0 && (
@@ -233,6 +258,7 @@ export default function LogEntryScreen() {
               driverName={profiles.find(p => p.id === e.driver_id)?.name ?? 'Unknown'}
               driverWillingToFly={profiles.find(p => p.id === e.driver_id)?.willing_to_fly ?? false}
               onComplete={handlePendingComplete}
+              onDelete={handlePendingDelete}
             />
           ))}
           <View style={s.divider} />
@@ -347,7 +373,7 @@ export default function LogEntryScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.xl, paddingTop: spacing.xl, paddingBottom: spacing.xxxxl },
+  content: { padding: spacing.xl, paddingTop: spacing.xl, paddingBottom: 300 },
   center: { ...components.center },
   pendingSection: { marginBottom: spacing.sm },
   pendingHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.xs },
@@ -399,4 +425,6 @@ const p = StyleSheet.create({
   completeBtn: { backgroundColor: colors.info, borderRadius: radius.sm, padding: spacing.lg, alignItems: 'center', marginTop: spacing.lg },
   completeBtnDim: { ...components.buttonDisabled },
   completeBtnText: { color: colors.textPrimary, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  deleteBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.sm },
+  deleteBtnText: { ...typography.labelSm, color: colors.error, letterSpacing: 1.5 },
 });

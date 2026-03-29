@@ -351,7 +351,28 @@ export default function MyTripsScreen({ session, navigation }) {
     setUnreadCounts(counts);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+
+    // Realtime: refresh when trips are created/updated/assigned
+    const subscription = supabase
+      .channel('driver_trips')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trips' },
+        (payload) => {
+          const row = payload.new || payload.old;
+          const userId = session.user.id;
+          // Only reload if this trip involves the current driver
+          if (row?.driver_id === userId || row?.second_driver_id === userId) {
+            load();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { subscription.unsubscribe(); };
+  }, []);
   function onRefresh() { setRefreshing(true); load(); }
 
   // ── GPS helpers ──────────────────────────────────────────────────────────
@@ -374,6 +395,18 @@ export default function MyTripsScreen({ session, navigation }) {
     await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
   };
 
+  // ── Notify admins of trip status change (fire-and-forget) ──
+  function notifyTripStatus(tripId, action) {
+    fetch('https://yincjogkjvotupzgetqg.supabase.co/functions/v1/notify-trip-status', {
+      method: 'POST',
+      headers: {
+        apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ trip_id: tripId, driver_id: session.user.id, action }),
+    }).catch(() => {}); // Silent fail — don't block trip flow
+  }
+
   // ── Start trip ───────────────────────────────────────────────────────────
   async function handleStart(trip) {
     const permitted = await requestPermissions();
@@ -385,6 +418,8 @@ export default function MyTripsScreen({ session, navigation }) {
       .eq('id', trip.id);
 
     if (err) { Alert.alert('Failed to start trip', err.message); return; }
+
+    notifyTripStatus(trip.id, 'started');
 
     const startTime = Date.now();
     startTimeRef.current = startTime;
@@ -510,6 +545,8 @@ export default function MyTripsScreen({ session, navigation }) {
               .eq('id', trip.id);
 
             if (err) { Alert.alert('Failed to end trip', err.message); return; }
+
+            notifyTripStatus(trip.id, 'ended');
 
             setActiveTrip(null);
             setTrips(prev => prev.map(t =>
