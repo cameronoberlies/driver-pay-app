@@ -54,8 +54,8 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
       console.log('[BG Task] Token expired/expiring, refreshing...');
 
       const tempClient = createClient(
-        process.env.EXPO_PUBLIC_SUPABASE_URL,
-        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+        'https://yincjogkjvotupzgetqg.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las'
       );
 
       const { data: refreshData, error: refreshError } = await tempClient.auth.refreshSession({
@@ -80,8 +80,8 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
 
     // Create authenticated client with fresh token
     const client = createClient(
-      process.env.EXPO_PUBLIC_SUPABASE_URL,
-      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+      'https://yincjogkjvotupzgetqg.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las',
       { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
     );
 
@@ -491,6 +491,7 @@ export default function MyTripsScreen({ session, navigation }) {
     // Background task — survives iOS runtime kills
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
       accuracy: Location.Accuracy.High,
+      activityType: Location.ActivityType.AutomotiveNavigation,
       timeInterval: 10000,
       distanceInterval: 50,
       foregroundService: {

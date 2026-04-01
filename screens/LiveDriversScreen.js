@@ -64,6 +64,16 @@ export default function LiveDriversScreen() {
   map.scrollWheelZoom.disable();
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
+  // Dealership marker + geofence ring
+  var dealershipIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:18px;height:18px;border-radius:3px;background:#f5a623;border:2px solid #fff;box-shadow:0 0 10px #f5a623;display:flex;align-items:center;justify-content:center;font-size:10px;color:#000;font-weight:bold;">D</div>',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+  L.marker([35.270367, -81.496247], { icon: dealershipIcon }).addTo(map).bindPopup('Discovery Automotive');
+  L.circle([35.270367, -81.496247], { radius: 150, color: '#f5a623', fillColor: '#f5a623', fillOpacity: 0.1, weight: 1, dashArray: '5,5' }).addTo(map);
+
   let markers = {};
 
   function updateMarkers(locations) {

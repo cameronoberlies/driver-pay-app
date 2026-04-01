@@ -171,6 +171,7 @@ export default function HomeScreen({ onManageUsers }) {
       .from('trips')
       .update({
         driver_id: selectedTrip.driver_id,
+        designated_driver_id: selectedTrip.driver_id,
         second_driver_id: selectedTrip.second_driver_id || null,
       })
       .eq('id', selectedTrip.id);
@@ -196,6 +197,20 @@ export default function HomeScreen({ onManageUsers }) {
       </View>
     );
   }
+
+  const STATUS_COLORS = {
+    pending: colors.info,
+    in_progress: colors.primary,
+    completed: colors.success,
+    finalized: colors.textTertiary,
+  };
+
+  const STATUS_LABELS = {
+    pending: 'PENDING',
+    in_progress: 'IN PROGRESS',
+    completed: 'COMPLETED',
+    finalized: 'FINALIZED',
+  };
 
   const drivers = profiles.filter((p) => p.role === 'driver');
   const displayedFlights = flightsFilterInAir
@@ -255,19 +270,28 @@ export default function HomeScreen({ onManageUsers }) {
             ? profiles.find((p) => p.id === trip.second_driver_id)
             : null;
 
+          const statusColor = STATUS_COLORS[trip.status] || colors.textMuted;
+
           return (
             <TouchableOpacity
               key={trip.id}
-              style={s.tripCard}
+              style={[s.tripCard, { borderLeftColor: statusColor }]}
               activeOpacity={0.7}
               onPress={() => { setSelectedTrip({ ...trip }); setShowTripModal(true); }}
             >
               <View style={s.tripTop}>
                 <Text style={s.tripTime}>{formatTime(trip.scheduled_pickup)}</Text>
-                <View style={s.tripTypeBadge}>
-                  <Text style={s.tripTypeText}>
-                    {trip.trip_type === 'fly' ? '✈ FLY' : '🚗 DRIVE'}
-                  </Text>
+                <View style={s.tripTopRight}>
+                  <View style={[s.tripStatusBadge, { borderColor: statusColor, backgroundColor: `${statusColor}15` }]}>
+                    <Text style={[s.tripStatusText, { color: statusColor }]}>
+                      {STATUS_LABELS[trip.status] || trip.status?.toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={s.tripTypeBadge}>
+                    <Text style={s.tripTypeText}>
+                      {trip.trip_type === 'fly' ? '✈ FLY' : '🚗 DRIVE'}
+                    </Text>
+                  </View>
                 </View>
               </View>
               <Text style={s.tripCity}>{trip.city}</Text>
@@ -583,6 +607,21 @@ const s = StyleSheet.create({
     ...typography.body,
     fontWeight: '700',
     color: colors.primary,
+  },
+  tripTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  tripStatusBadge: {
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  tripStatusText: {
+    ...typography.labelSm,
+    letterSpacing: 1,
   },
   tripTypeBadge: {
     paddingHorizontal: spacing.sm,

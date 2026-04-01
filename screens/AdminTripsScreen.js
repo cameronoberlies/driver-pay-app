@@ -50,6 +50,7 @@ export default function AdminTripsScreen({ session, userRole }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState('active'); // 'active' | 'all' | 'create'
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'in_progress' | 'completed' | 'finalized'
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [showReassignModal, setShowReassignModal] = useState(false);
@@ -154,7 +155,8 @@ export default function AdminTripsScreen({ session, userRole }) {
     (t) => t.status === 'pending' || t.status === 'in_progress'
   );
 
-  const displayedTrips = view === 'active' ? activeTrips : trips;
+  const filteredAllTrips = statusFilter === 'all' ? trips : trips.filter(t => t.status === statusFilter);
+  const displayedTrips = view === 'active' ? activeTrips : filteredAllTrips;
 
   if (loading && !refreshing) {
     return (
@@ -213,6 +215,33 @@ export default function AdminTripsScreen({ session, userRole }) {
         </Text>
         <Text style={s.sectionCount}>{displayedTrips.length} trips</Text>
       </View>
+
+      {/* Status filter chips (All Trips view only) */}
+      {view === 'all' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow}>
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'completed', label: 'Needs Finalization' },
+            { key: 'pending', label: 'Pending' },
+            { key: 'in_progress', label: 'In Progress' },
+            { key: 'finalized', label: 'Finalized' },
+          ].map(({ key, label }) => {
+            const count = key === 'all' ? trips.length : trips.filter(t => t.status === key).length;
+            const isActive = statusFilter === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[s.filterChip, isActive && s.filterChipActive]}
+                onPress={() => setStatusFilter(key)}
+              >
+                <Text style={[s.filterChipText, isActive && s.filterChipTextActive]}>
+                  {label} ({count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {/* Trips List - CARD LAYOUT */}
       <ScrollView
@@ -681,7 +710,8 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
             placeholder="AB123"
             placeholderTextColor={colors.textTertiary}
             value={form.crm_id}
-            onChangeText={(text) => set('crm_id', text)}
+            onChangeText={(text) => set('crm_id', text.toUpperCase())}
+            autoCapitalize="characters"
           />
         </View>
 
@@ -1200,6 +1230,32 @@ const s = StyleSheet.create({
     ...typography.captionSm,
     letterSpacing: 1,
     color: colors.bg,
+  },
+  filterRow: {
+    flexGrow: 0,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    marginRight: spacing.sm,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primaryDim,
+    borderColor: colors.primary,
+  },
+  filterChipText: {
+    ...typography.captionSm,
+    color: colors.textTertiary,
+  },
+  filterChipTextActive: {
+    color: colors.primary,
   },
   scrollView: {
     flex: 1,

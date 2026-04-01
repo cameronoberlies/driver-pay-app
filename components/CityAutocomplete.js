@@ -4,6 +4,20 @@ import { colors, spacing, radius } from '../lib/theme';
 
 const API_KEY = 'pk.ad8425665c12e1b7f5d7827258d59077';
 
+const STATE_ABBR = {
+  'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
+  'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
+  'Hawaii': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA',
+  'Kansas': 'KS', 'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+  'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS', 'Missouri': 'MO',
+  'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+  'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH',
+  'Oklahoma': 'OK', 'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
+  'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY',
+  'District of Columbia': 'DC',
+};
+
 export default function CityAutocomplete({ value, onChangeText, placeholder, style, placeholderTextColor }) {
   const [suggestions, setSuggestions] = useState([]);
   const debounceRef = useRef(null);
@@ -38,10 +52,10 @@ export default function CityAutocomplete({ value, onChangeText, placeholder, sty
 
         if (Array.isArray(data) && data.length > 0) {
           const cities = data.map(item => {
-            const parts = item.display_name.split(', ');
-            const city = parts[0];
-            const state = parts.length >= 3 ? parts[parts.length - 2] : '';
-            return { key: item.place_id, city, state, display: state ? `${city}, ${state}` : city };
+            const city = item.address?.name || item.display_name.split(', ')[0];
+            const state = item.address?.state || '';
+            const stateAbbr = STATE_ABBR[state] || state;
+            return { key: item.place_id, city, state: stateAbbr, display: stateAbbr ? `${city}, ${stateAbbr}` : city };
           });
           setSuggestions(cities);
         } else {

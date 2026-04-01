@@ -265,6 +265,7 @@ export default function MileageCostsScreen() {
               data={varianceTrendData}
               width={chartWidth}
               height={220}
+              yAxisLabel="$"
               chartConfig={chartConfig}
               bezier
               style={s.chart}

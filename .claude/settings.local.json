@@ -8,7 +8,9 @@
       "Bash(node -e \"const m = require\\(''@react-native-async-storage/async-storage/jest/async-storage-mock''\\); console.log\\(typeof m, typeof m.default, typeof m.clear, Object.keys\\(m\\).slice\\(0,5\\)\\)\")",
       "Bash(node -e \"const pkg = require\\(''./node_modules/expo/package.json''\\); const deps = {...\\(pkg.dependencies||{}\\), ...\\(pkg.peerDependencies||{}\\)}; console.log\\(deps[''react-native-safe-area-context'']\\)\")",
       "Bash(ls -la /c/Users/Cameron/DriverPayApp2/*.js)",
-      "Bash(npx expo:*)"
+      "Bash(npx expo:*)",
+      "Bash(find /c/Users/Cameron/DriverPayApp2 -name schema* -o -name *migration*)",
+      "Bash(find /c/Users/Cameron/DriverPayApp2/supabase -type f -name *.sql -o -name *.ts -o -name *.js)"
     ]
   }
 }

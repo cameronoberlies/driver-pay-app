@@ -97,7 +97,7 @@ function PendingRow({ entry, driverName, driverWillingToFly, onComplete, onDelet
             </View>
           </View>
           <Text style={p.label}>CARPAGE ID *</Text>
-          <TextInput style={p.input} value={form.crm_id} onChangeText={v => set('crm_id', v)} placeholder="CP-XXXX" placeholderTextColor={colors.textMuted} autoCapitalize="characters" />
+          <TextInput style={p.input} value={form.crm_id} onChangeText={v => set('crm_id', v.toUpperCase())} placeholder="CP-XXXX" placeholderTextColor={colors.textMuted} autoCapitalize="characters" />
 
           <View style={p.switchRow}>
             <Text style={[p.switchLabel, form.recon_missed && { color: colors.error }]}>RECON MISSED</Text>
@@ -345,7 +345,7 @@ export default function LogEntryScreen() {
       <CityAutocomplete style={s.input} value={form.city} onChangeText={v => set('city', v)} placeholder="Charlotte" placeholderTextColor={colors.textMuted} />
 
       <Text style={s.label}>CARPAGE ID</Text>
-      <TextInput style={s.input} value={form.crm_id} onChangeText={v => set('crm_id', v)} placeholder="CP-XXXX" placeholderTextColor={colors.textMuted} autoCapitalize="characters" />
+      <TextInput style={s.input} value={form.crm_id} onChangeText={v => set('crm_id', v.toUpperCase())} placeholder="CP-XXXX" placeholderTextColor={colors.textMuted} autoCapitalize="characters" />
 
       <View style={s.switchRow}>
         <Text style={[s.switchLabel, form.recon_missed && { color: colors.error }]}>RECON MISSED</Text>

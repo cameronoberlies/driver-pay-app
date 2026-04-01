@@ -27,11 +27,12 @@ serve(async (req) => {
       role, 
       userId, 
       willing_to_fly,
+      can_drive_manual,
       // Driver-specific fields (optional, only for drivers)
       phone_number,
       date_of_birth,
       drivers_license_number,
-      drivers_license_photo
+      drivers_license_photo_url
     } = body
 
     if (action === 'create') {
@@ -69,8 +70,9 @@ serve(async (req) => {
         profileData.phone_number = phone_number || null
         profileData.date_of_birth = date_of_birth || null
         profileData.drivers_license_number = drivers_license_number || null
-        profileData.drivers_license_photo = drivers_license_photo || null
+        profileData.drivers_license_photo_url = drivers_license_photo_url || null
         profileData.willing_to_fly = willing_to_fly || false
+        profileData.can_drive_manual = can_drive_manual || false
       }
 
       // Create profile
@@ -84,7 +86,7 @@ serve(async (req) => {
         throw profileError
       }
 
-      return new Response(JSON.stringify({ success: true, user: newUser.user }), {
+      return new Response(JSON.stringify({ success: true, userId: newUser.user.id, user: newUser.user }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
@@ -102,6 +104,32 @@ serve(async (req) => {
       const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
 
       if (authError) throw authError
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'update-email') {
+      if (!userId || !email) {
+        return new Response(
+          JSON.stringify({ error: 'userId and email are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Update email in auth.users
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        email,
+        email_confirm: true,
+      })
+      if (authError) throw authError
+
+      // Update email in profiles table (if column exists)
+      await supabaseAdmin
+        .from('profiles')
+        .update({ email })
+        .eq('id', userId)
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

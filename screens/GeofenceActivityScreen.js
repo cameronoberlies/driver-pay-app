@@ -25,7 +25,7 @@ export default function GeofenceActivityScreen() {
       const [{ data: eventsData }, { data: profilesData }] = await Promise.all([
         supabase
           .from('geofence_events')
-          .select('*, trips(city, carpage_id, crm_id, trip_type)')
+          .select('*, trips(city, crm_id, trip_type)')
           .gte('created_at', yesterday)
           .order('created_at', { ascending: false })
           .limit(50),
@@ -189,7 +189,7 @@ function EventCard({ event, driverName, timeAgo }) {
             {event.trips.trip_type === 'fly' ? '✈ FLY' : '🚗 DRIVE'}
           </Text>
           <Text style={s.tripCity}>{event.trips.city}</Text>
-          <Text style={s.tripCrm}>{event.trips.carpage_id || event.trips.crm_id || '—'}</Text>
+          <Text style={s.tripCrm}>{event.trips.crm_id || '—'}</Text>
         </View>
       )}
     </View>

@@ -17,6 +17,7 @@ import { getWeekBounds, getMonthBounds, withTimeout } from "../lib/utils";
 import { colors, spacing, radius, typography, components } from "../lib/theme";
 import UpcomingFlightCard from "../components/UpcomingFlightCard";
 import DriverPhoneBookModal from '../components/DriverPhoneBookModal';
+import DriverEntriesModal from '../components/DriverEntriesModal';
 import useResponsive from '../lib/useResponsive';
 
 const TIMEOUT_MS = 8000;
@@ -29,6 +30,7 @@ export default function DriverDashboard({ session }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [phoneBookVisible, setPhoneBookVisible] = useState(false);
+  const [entriesVisible, setEntriesVisible] = useState(false);
   const [weekExpanded, setWeekExpanded] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [nextTrip, setNextTrip] = useState(null);
@@ -303,7 +305,14 @@ export default function DriverDashboard({ session }) {
         </View>
       </View>
 
-      <Text style={styles.sectionLabel}>RECENT TRIPS</Text>
+      <TouchableOpacity
+        style={styles.sectionRow}
+        activeOpacity={0.7}
+        onPress={() => setEntriesVisible(true)}
+      >
+        <Text style={styles.sectionLabel}>RECENT TRIPS</Text>
+        <Text style={styles.viewAllText}>VIEW ALL &#9656;</Text>
+      </TouchableOpacity>
       {entries.slice(0, 10).map((entry) => (
         <TouchableOpacity
           key={entry.id}
@@ -390,6 +399,12 @@ export default function DriverDashboard({ session }) {
     <DriverPhoneBookModal
       visible={phoneBookVisible}
       onClose={() => setPhoneBookVisible(false)}
+    />
+
+    <DriverEntriesModal
+      visible={entriesVisible}
+      onClose={() => setEntriesVisible(false)}
+      entries={entries}
     />
   </>
   );
@@ -550,12 +565,23 @@ const styles = StyleSheet.create({
     ...typography.bodySm,
     color: colors.textMuted,
   },
+  sectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
   sectionLabel: {
     ...typography.labelSm,
     fontSize: 10,
     color: colors.textTertiary,
     letterSpacing: 3,
-    marginBottom: spacing.md,
+  },
+  viewAllText: {
+    ...typography.labelSm,
+    fontSize: 10,
+    color: colors.primary,
+    letterSpacing: 1.5,
   },
   bonusRow: {
     flexDirection: "row",

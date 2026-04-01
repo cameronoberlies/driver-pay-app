@@ -32,6 +32,9 @@ import AdminTripsScreen from "./screens/AdminTripsScreen";
 import AdminTrackingHealthScreen from "./screens/AdminTrackingHealthScreen";
 import { GeofenceManager } from "./lib/GeofenceManager";
 import { useUpdateChecker } from "./lib/AndroidUpdateChecker";
+import { installErrorHandlers, logEvent } from "./lib/systemLog";
+
+installErrorHandlers();
 import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
@@ -210,9 +213,20 @@ async function registerForPushNotifications(userId) {
     console.log("Push: token obtained:", tokenData.data);
     const token = tokenData.data;
 
+    let updateId = null;
+    try {
+      if (!__DEV__) {
+        // Try to get the message from the manifest, fall back to createdAt, then updateId
+        const message = Updates.manifest?.extra?.expoGo?.updateMessage
+          || Updates.manifest?.message;
+        const createdAt = Updates.createdAt?.toISOString?.() || null;
+        updateId = message || createdAt || Updates.updateId || null;
+      }
+    } catch {}
+
     const { error } = await supabase
       .from("profiles")
-      .update({ push_token: token })
+      .update({ push_token: token, device_os: Platform.OS, app_update_id: updateId })
       .eq("id", userId);
     console.log("Push: saved to Supabase, error:", error);
 
@@ -232,6 +246,7 @@ export default function App() {
   const { updateAvailable } = useUpdateChecker();
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [showUpdateToast, setShowUpdateToast] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -269,6 +284,13 @@ export default function App() {
     }
   }
 
+  const pendingUpdateRef = useRef(false);
+
+  async function applyUpdate() {
+    setShowUpdateToast(true);
+    setTimeout(() => Updates.reloadAsync(), 1500);
+  }
+
   useEffect(() => {
     async function checkForUpdates() {
       if (__DEV__) return;
@@ -276,6 +298,13 @@ export default function App() {
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
           await Updates.fetchUpdateAsync();
+          pendingUpdateRef.current = true;
+          // Apply immediately if no active trip
+          const AsyncStorageCheck = require('@react-native-async-storage/async-storage').default;
+          const activeTrip = await AsyncStorageCheck.getItem('activeTrip');
+          if (!activeTrip) {
+            applyUpdate();
+          }
         }
       } catch (e) {
         console.log("Update check failed:", e);
@@ -329,6 +358,30 @@ export default function App() {
             } catch (e) {
               console.log("Session refresh failed:", e);
             }
+
+            // Apply pending update if no active trip
+            if (pendingUpdateRef.current) {
+              try {
+                const AsyncStorageCheck = require('@react-native-async-storage/async-storage').default;
+                const activeTrip = await AsyncStorageCheck.getItem('activeTrip');
+                if (!activeTrip) {
+                  applyUpdate();
+                }
+              } catch {}
+            }
+
+            // Re-register geofence if iOS killed it while backgrounded
+            const geofenceActive = await GeofenceManager.isActive();
+            if (!geofenceActive && geofenceStartedRef.current) {
+              console.log("[Geofence] Re-registering after iOS suspension");
+              const restarted = await GeofenceManager.start();
+              logEvent(
+                restarted ? 'info' : 'warn',
+                'geofence_re_registered',
+                `Geofence re-registration ${restarted ? 'succeeded' : 'failed'} after foreground resume`,
+                { device_os: Platform.OS }
+              );
+            }
           }
         }
         appState.current = nextAppState;
@@ -364,10 +417,22 @@ export default function App() {
   useEffect(() => {
     if (profile?.role === "driver" && !geofenceStartedRef.current) {
       geofenceStartedRef.current = true;
-      GeofenceManager.start().then(() => {
+      GeofenceManager.start().then((success) => {
+        logEvent(
+          success ? 'info' : 'warn',
+          success ? 'geofence_registered' : 'geofence_registration_failed',
+          `Geofence ${success ? 'registered' : 'failed'} for ${profile.name}`,
+          { driver_id: session?.user?.id, device_os: Platform.OS }
+        );
         setTimeout(async () => {
           const isActive = await GeofenceManager.isActive();
           console.log("🔍 Geofence registered:", isActive);
+          if (!isActive && success) {
+            logEvent('warn', 'geofence_inactive_after_start',
+              `Geofence reported inactive 3s after successful start for ${profile.name}`,
+              { driver_id: session?.user?.id }
+            );
+          }
         }, 3000);
       });
     }
@@ -444,6 +509,11 @@ export default function App() {
             onClose={() => setShowManageUsers(false)}
             session={session}
           />
+          {showUpdateToast && (
+            <View style={styles.updateToast}>
+              <Text style={styles.updateToastText}>Applying update...</Text>
+            </View>
+          )}
         </View>
       </SafeAreaProvider>
     );
@@ -465,6 +535,11 @@ export default function App() {
             <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
           </>
         )}
+        {showUpdateToast && (
+          <View style={styles.updateToast}>
+            <Text style={styles.updateToastText}>Applying update...</Text>
+          </View>
+        )}
       </View>
     </SafeAreaProvider>
   );
@@ -478,6 +553,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   app: { flex: 1, backgroundColor: colors.bg },
+  updateToast: {
+    position: "absolute",
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    alignItems: "center",
+  },
+  updateToastText: {
+    ...typography.bodySm,
+    color: colors.primary,
+    fontWeight: "600",
+  },
   screen: { flex: 1 },
   adminBar: {
     paddingTop: 60,
