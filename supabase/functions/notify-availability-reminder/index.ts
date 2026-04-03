@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-availability-reminder/index.ts
 // notify-availability-reminder Edge Function
 // Sends a push notification to all drivers reminding them to submit their availability
 // Triggered by pg_cron every Saturday at noon ET

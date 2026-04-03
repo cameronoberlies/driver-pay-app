@@ -264,6 +264,8 @@ export default function AdminTripsScreen({ session, userRole }) {
               setSelectedTrip(trip);
               if (trip.status === 'completed') {
                 setShowFinalizeModal(true);
+              } else if (trip.status === 'finalized') {
+                setShowReassignModal(true);
               } else if (trip.status === 'pending' || trip.status === 'in_progress') {
                 setShowReassignModal(true);
               }
@@ -406,6 +408,8 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPre
         </Text>
       )}
 
+      {/* Speed data shown in trip detail modal */}
+
       {/* Action Row */}
       <View style={s.chatRow}>
         {trip.status === 'pending' && !isReadOnly && onDelete && (
@@ -545,8 +549,8 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
   }
 
   async function handleCreate() {
-    if (!form.driver_id || !form.city || !form.crm_id) {
-      setError('Driver, City, and CRM ID are required');
+    if (!form.driver_id) {
+      setError('Driver is required');
       return;
     }
 
@@ -704,7 +708,7 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
         </View>
 
         <View style={s.field}>
-          <Text style={s.label}>CRM ID *</Text>
+          <Text style={s.label}>CRM ID</Text>
           <TextInput
             style={s.input}
             placeholder="AB123"
@@ -814,27 +818,46 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
 // ── REASSIGN TRIP MODAL ────────────────────────────────────────────────────────────────────────────
 function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, availability }) {
   const drivers = allProfiles.filter((p) => p.role === 'driver');
+  const isPending = trip.status === 'pending';
   const [driverId, setDriverId] = useState(trip.driver_id);
   const [secondDriverId, setSecondDriverId] = useState(trip.second_driver_id || null);
+  const [city, setCity] = useState(trip.city || '');
+  const [crmId, setCrmId] = useState(trip.crm_id || '');
+  const [tripType, setTripType] = useState(trip.trip_type || 'drive');
+  const [notes, setNotes] = useState(trip.notes || '');
+  const [pickupDate, setPickupDate] = useState(trip.scheduled_pickup ? new Date(trip.scheduled_pickup) : new Date());
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const pickupTime = trip.scheduled_pickup
     ? new Date(trip.scheduled_pickup).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
     : null;
 
+  function onTimeChange(event, selectedDate) {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (selectedDate) setPickupDate(selectedDate);
+  }
+
   async function handleSave() {
-    if (driverId === trip.driver_id && secondDriverId === trip.second_driver_id) {
-      onClose();
-      return;
+    setSaving(true);
+
+    const updates = {
+      driver_id: driverId,
+      designated_driver_id: driverId,
+      second_driver_id: secondDriverId || null,
+    };
+
+    if (isPending) {
+      updates.city = city;
+      updates.crm_id = crmId;
+      updates.trip_type = tripType;
+      updates.notes = notes;
+      updates.scheduled_pickup = pickupDate.toISOString();
     }
 
-    setSaving(true);
     const { data, error } = await supabase
       .from('trips')
-      .update({
-        driver_id: driverId,
-        second_driver_id: secondDriverId || null,
-      })
+      .update(updates)
       .eq('id', trip.id)
       .select()
       .single();
@@ -847,45 +870,164 @@ function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, avai
     // Notify newly assigned drivers
     const newDrivers = [driverId, secondDriverId].filter((id) => id && id !== trip.driver_id && id !== trip.second_driver_id);
     if (newDrivers.length > 0) {
-      notifyTripAssigned(trip.id, newDrivers, trip.city, trip.scheduled_pickup);
+      notifyTripAssigned(trip.id, newDrivers, city || trip.city, pickupDate.toISOString());
     }
 
     onSaved(data);
   }
 
   return (
-    <Modal visible transparent animationType="fade">
+    <Modal visible transparent animationType="slide">
       <View style={s.modalOverlay}>
-        <View style={s.modalContainer}>
-          <Text style={s.modalTitle}>Trip Details</Text>
-          <Text style={s.modalSubtitle}>
-            {trip.city}{trip.crm_id ? ` · ${trip.crm_id}` : ''}
-          </Text>
+        <View style={[s.modalContainer, { maxHeight: '90%', flex: undefined }]} onStartShouldSetResponder={() => true}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md }}>
+            <View>
+              <Text style={s.modalTitle}>Trip Details</Text>
+              <Text style={s.modalSubtitle}>
+                {trip.city}{trip.crm_id ? ` · ${trip.crm_id}` : ''}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={{ padding: spacing.sm }}>
+              <Text style={{ color: colors.textTertiary, fontSize: 18 }}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
-          <ScrollView style={{ maxHeight: 400 }}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* Trip info */}
             <View style={s.reassignInfo}>
               <View style={s.reassignRow}>
                 <Text style={s.reassignLabel}>STATUS</Text>
                 <Text style={s.reassignValue}>{trip.status === 'in_progress' ? 'IN PROGRESS' : trip.status.toUpperCase()}</Text>
               </View>
-              <View style={s.reassignRow}>
-                <Text style={s.reassignLabel}>TYPE</Text>
-                <Text style={s.reassignValue}>{trip.trip_type === 'fly' ? 'Fly' : 'Drive'}</Text>
-              </View>
-              {pickupTime && (
-                <View style={s.reassignRow}>
-                  <Text style={s.reassignLabel}>PICKUP</Text>
-                  <Text style={s.reassignValue}>{pickupTime}</Text>
-                </View>
-              )}
-              {trip.notes && (
-                <View style={s.reassignRow}>
-                  <Text style={s.reassignLabel}>NOTES</Text>
-                  <Text style={[s.reassignValue, { flex: 1, textAlign: 'right' }]}>{trip.notes}</Text>
-                </View>
+
+              {isPending ? (
+                <>
+                  <View style={s.reassignRow}>
+                    <Text style={s.reassignLabel}>TYPE</Text>
+                    <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                      <TouchableOpacity
+                        style={[s.driverPill, { paddingVertical: spacing.xs }, tripType === 'fly' && s.driverPillActive]}
+                        onPress={() => setTripType('fly')}
+                      >
+                        <Text style={[s.driverPillText, tripType === 'fly' && s.driverPillTextActive]}>Fly</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[s.driverPill, { paddingVertical: spacing.xs }, tripType === 'drive' && s.driverPillActive]}
+                        onPress={() => setTripType('drive')}
+                      >
+                        <Text style={[s.driverPillText, tripType === 'drive' && s.driverPillTextActive]}>Drive</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View style={s.reassignRow}>
+                    <Text style={s.reassignLabel}>CITY</Text>
+                    <TextInput
+                      style={[s.reassignValue, { borderBottomWidth: 1, borderBottomColor: colors.borderLight, paddingVertical: spacing.xs, minWidth: 120, textAlign: 'right' }]}
+                      value={city}
+                      onChangeText={setCity}
+                      placeholder="City, ST"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                  <View style={s.reassignRow}>
+                    <Text style={s.reassignLabel}>CRM ID</Text>
+                    <TextInput
+                      style={[s.reassignValue, { borderBottomWidth: 1, borderBottomColor: colors.borderLight, paddingVertical: spacing.xs, minWidth: 100, textAlign: 'right' }]}
+                      value={crmId}
+                      onChangeText={(t) => setCrmId(t.toUpperCase())}
+                      placeholder="AB123"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="characters"
+                    />
+                  </View>
+                  <View style={s.reassignRow}>
+                    <Text style={s.reassignLabel}>PICKUP</Text>
+                    <TouchableOpacity onPress={() => setShowTimePicker(true)}>
+                      <Text style={[s.reassignValue, { color: colors.primary }]}>
+                        {pickupDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {showTimePicker && (
+                    <View>
+                      <DateTimePicker
+                        value={pickupDate}
+                        mode="time"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        themeVariant="dark"
+                        textColor="#fff"
+                        onChange={onTimeChange}
+                      />
+                      {Platform.OS === 'ios' && (
+                        <TouchableOpacity style={{ alignItems: 'center', paddingVertical: spacing.sm }} onPress={() => setShowTimePicker(false)}>
+                          <Text style={{ color: colors.primary, fontWeight: '700', letterSpacing: 1.5, fontSize: 11 }}>DONE</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                  <View style={[s.reassignRow, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+                    <Text style={s.reassignLabel}>NOTES</Text>
+                    <TextInput
+                      style={[s.reassignValue, { borderWidth: 1, borderColor: colors.borderLight, borderRadius: radius.sm, padding: spacing.sm, width: '100%', marginTop: spacing.xs, textAlign: 'left' }]}
+                      value={notes}
+                      onChangeText={setNotes}
+                      placeholder="Flight info, seller contact, etc."
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                    />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={s.reassignRow}>
+                    <Text style={s.reassignLabel}>TYPE</Text>
+                    <Text style={s.reassignValue}>{trip.trip_type === 'fly' ? 'Fly' : 'Drive'}</Text>
+                  </View>
+                  {pickupTime && (
+                    <View style={s.reassignRow}>
+                      <Text style={s.reassignLabel}>PICKUP</Text>
+                      <Text style={s.reassignValue}>{pickupTime}</Text>
+                    </View>
+                  )}
+                  {trip.notes && (
+                    <View style={s.reassignRow}>
+                      <Text style={s.reassignLabel}>NOTES</Text>
+                      <Text style={[s.reassignValue, { flex: 1, textAlign: 'right' }]}>{trip.notes}</Text>
+                    </View>
+                  )}
+                </>
               )}
             </View>
+
+            {/* Speed Analytics */}
+            {trip.speed_data && trip.speed_data.top_speed > 0 && (trip.status === 'completed' || trip.status === 'finalized') && (
+              <View style={s.speedCards}>
+                <View style={s.speedCard}>
+                  <Text style={s.speedCardLabel}>TOP SPEED</Text>
+                  <Text style={s.speedCardValue}>{trip.speed_data.top_speed}</Text>
+                  <Text style={s.speedCardUnit}>mph</Text>
+                </View>
+                <View style={s.speedCard}>
+                  <Text style={s.speedCardLabel}>AVG SPEED</Text>
+                  <Text style={s.speedCardValue}>{trip.speed_data.avg_speed}</Text>
+                  <Text style={s.speedCardUnit}>mph</Text>
+                </View>
+                <View style={[s.speedCard, trip.speed_data.seconds_over_80 > 0 && s.speedCardWarn]}>
+                  <Text style={s.speedCardLabel}>OVER 80</Text>
+                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_80 > 0 && { color: colors.warning }]}>
+                    {Math.round(trip.speed_data.seconds_over_80 / 60)}
+                  </Text>
+                  <Text style={s.speedCardUnit}>min</Text>
+                </View>
+                <View style={[s.speedCard, trip.speed_data.seconds_over_90 > 0 && s.speedCardDanger]}>
+                  <Text style={s.speedCardLabel}>OVER 90</Text>
+                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_90 > 0 && { color: colors.error }]}>
+                    {Math.round(trip.speed_data.seconds_over_90 / 60)}
+                  </Text>
+                  <Text style={s.speedCardUnit}>min</Text>
+                </View>
+              </View>
+            )}
 
             {/* Driver 1 */}
             <Text style={s.reassignSectionLabel}>ASSIGN DRIVER</Text>
@@ -926,22 +1068,22 @@ function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, avai
               ))}
             </ScrollView>
             {secondDriverId ? <DriverWarnings warnings={getDriverWarnings(secondDriverId, trip.scheduled_pickup, allTrips, availability, trip.id)} /> : null}
-          </ScrollView>
 
-          <View style={s.modalButtons}>
-            <TouchableOpacity style={s.modalBtnCancel} onPress={onClose}>
-              <Text style={s.modalBtnCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.modalBtnSave, saving && s.disabled]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              <Text style={s.modalBtnSaveText}>
-                {saving ? 'Saving...' : 'Save Changes →'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+            <View style={[s.modalButtons, { marginTop: spacing.xl, marginBottom: spacing.xxl }]}>
+              <TouchableOpacity style={s.modalBtnCancel} onPress={onClose}>
+                <Text style={s.modalBtnCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.modalBtnSave, saving && s.disabled]}
+                onPress={handleSave}
+                disabled={saving}
+              >
+                <Text style={s.modalBtnSaveText}>
+                  {saving ? 'Saving...' : 'Save Changes →'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -1078,7 +1220,37 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
             {trip.city} · {trip.crm_id}
           </Text>
 
-          <ScrollView style={{ maxHeight: 400 }}>
+          <ScrollView style={{ maxHeight: 400 }} keyboardShouldPersistTaps="handled">
+            {/* Speed Analytics */}
+            {trip.speed_data && trip.speed_data.top_speed > 0 && (
+              <View style={s.speedCards}>
+                <View style={s.speedCard}>
+                  <Text style={s.speedCardLabel}>TOP SPEED</Text>
+                  <Text style={s.speedCardValue}>{trip.speed_data.top_speed}</Text>
+                  <Text style={s.speedCardUnit}>mph</Text>
+                </View>
+                <View style={s.speedCard}>
+                  <Text style={s.speedCardLabel}>AVG SPEED</Text>
+                  <Text style={s.speedCardValue}>{trip.speed_data.avg_speed}</Text>
+                  <Text style={s.speedCardUnit}>mph</Text>
+                </View>
+                <View style={[s.speedCard, trip.speed_data.seconds_over_80 > 0 && s.speedCardWarn]}>
+                  <Text style={s.speedCardLabel}>OVER 80</Text>
+                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_80 > 0 && { color: colors.warning }]}>
+                    {Math.round(trip.speed_data.seconds_over_80 / 60)}
+                  </Text>
+                  <Text style={s.speedCardUnit}>min</Text>
+                </View>
+                <View style={[s.speedCard, trip.speed_data.seconds_over_90 > 0 && s.speedCardDanger]}>
+                  <Text style={s.speedCardLabel}>OVER 90</Text>
+                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_90 > 0 && { color: colors.error }]}>
+                    {Math.round(trip.speed_data.seconds_over_90 / 60)}
+                  </Text>
+                  <Text style={s.speedCardUnit}>min</Text>
+                </View>
+              </View>
+            )}
+
             <View style={s.modalField}>
               <Text style={s.modalLabel}>{driver1?.name} Pay ($) *</Text>
               <TextInput
@@ -1351,6 +1523,69 @@ const s = StyleSheet.create({
     color: colors.primary,
     fontSize: 11,
   },
+  speedCards: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  speedCard: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  speedCardWarn: {
+    backgroundColor: 'rgba(255, 159, 10, 0.06)',
+    borderColor: 'rgba(255, 159, 10, 0.2)',
+  },
+  speedCardDanger: {
+    backgroundColor: 'rgba(255, 69, 58, 0.06)',
+    borderColor: 'rgba(255, 69, 58, 0.2)',
+  },
+  speedCardLabel: {
+    ...typography.labelSm,
+    color: colors.textMuted,
+    letterSpacing: 1.5,
+    marginBottom: spacing.xs,
+  },
+  speedCardValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: colors.textPrimary,
+  },
+  speedCardUnit: {
+    ...typography.captionSm,
+    color: colors.textMuted,
+  },
+  stopsSection: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  stopsTitle: {
+    ...typography.labelSm,
+    color: colors.textMuted,
+    letterSpacing: 2,
+    marginBottom: spacing.xs,
+  },
+  stopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
+  },
+  stopTime: {
+    ...typography.captionSm,
+    color: colors.textTertiary,
+  },
+  stopDuration: {
+    ...typography.captionSm,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
   notesText: {
     ...typography.caption,
     color: colors.textTertiary,
@@ -1601,6 +1836,7 @@ const s = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.xl,
     maxWidth: 500,
+    maxHeight: '85%',
     width: '100%',
     alignSelf: 'center',
   },

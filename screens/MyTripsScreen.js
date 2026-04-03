@@ -29,7 +29,14 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   try {
     const stored = await AsyncStorage.getItem('activeTrip');
     if (!stored) return;
-    const { tripId, userId, lastLat, lastLon, miles, startTime } = JSON.parse(stored);
+    const parsed = JSON.parse(stored);
+    if (parsed.paused) return; // Skip everything if trip is paused
+    const { tripId, userId, lastLat, lastLon, miles, startTime } = parsed;
+    const storedTopSpeed = parsed.topSpeed;
+    const storedOver80 = parsed.secondsOver80;
+    const storedOver90 = parsed.secondsOver90;
+    const storedSpeedTime = parsed.lastSpeedTime;
+    let bgStopStart = parsed.currentStopStart;
 
     // FIX: Get session from Supabase v2 storage key
     const STORAGE_KEY = 'sb-yincjogkjvotupzgetqg-auth-token';
@@ -86,7 +93,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     );
 
     const loc = locations[locations.length - 1];
-    const { latitude, longitude } = loc.coords;
+    const { latitude, longitude, speed: rawSpeed } = loc.coords;
 
     let newMiles = miles;
     if (lastLat && lastLon) {
@@ -100,6 +107,66 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       const distance = R * c;
       newMiles += distance;
+    }
+
+    // Speed tracking (rawSpeed is m/s, convert to mph)
+    const speedNow = Date.now();
+    // Fallback: calculate speed from distance if GPS speed unavailable (-1)
+    let speedMph = 0;
+    if (rawSpeed != null && rawSpeed >= 0) {
+      speedMph = rawSpeed * 2.237;
+    } else if (lastLat && lastLon && storedSpeedTime) {
+      const R = 3958.8;
+      const dLat2 = (latitude - lastLat) * Math.PI / 180;
+      const dLon2 = (longitude - lastLon) * Math.PI / 180;
+      const a2 = Math.sin(dLat2/2) * Math.sin(dLat2/2) +
+                Math.cos(lastLat * Math.PI / 180) * Math.cos(latitude * Math.PI / 180) *
+                Math.sin(dLon2/2) * Math.sin(dLon2/2);
+      const dist = R * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2));
+      const timeSec = (speedNow - storedSpeedTime) / 1000;
+      if (timeSec > 0 && timeSec < 120) {
+        speedMph = (dist / timeSec) * 3600;
+      }
+    }
+    let topSpeed = storedTopSpeed || 0;
+    let secondsOver80 = storedOver80 || 0;
+    let secondsOver90 = storedOver90 || 0;
+
+    if (speedMph > topSpeed) topSpeed = Math.round(speedMph);
+    const elapsed = storedSpeedTime ? (speedNow - storedSpeedTime) / 1000 : 0;
+    if (elapsed > 0 && elapsed < 120) {
+      if (speedMph > 80) secondsOver80 += elapsed;
+      if (speedMph > 90) secondsOver90 += elapsed;
+    }
+
+    // Stop tracking (under 5 mph = stopped) — writes to trip_stops table in real-time
+    let bgStopId = parsed.currentStopId;
+    if (speedMph < 5) {
+      if (!bgStopStart) {
+        bgStopStart = speedNow;
+      } else if (!bgStopId && (speedNow - bgStopStart) >= 5 * 60 * 1000) {
+        // 5 min threshold reached, insert stop into DB
+        const { data: stopRow } = await client.from('trip_stops').insert({
+          trip_id: tripId,
+          driver_id: userId,
+          latitude,
+          longitude,
+          started_at: new Date(bgStopStart).toISOString(),
+        }).select('id').single();
+        if (stopRow) bgStopId = stopRow.id;
+      }
+    } else if (bgStopStart) {
+      if (bgStopId) {
+        const stopDuration = Math.round((speedNow - bgStopStart) / 60000);
+        const { error: bgStopErr } = await client.from('trip_stops').update({
+          ended_at: new Date().toISOString(),
+          duration_minutes: stopDuration,
+        }).eq('id', bgStopId);
+        if (bgStopErr) console.log('[BG Task] Stop end failed:', bgStopErr.message);
+        else console.log('[BG Task] Stop ended:', bgStopId, stopDuration + 'min');
+      }
+      bgStopId = null;
+      bgStopStart = null;
     }
 
     // Write to database
@@ -123,6 +190,12 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
       lastLon: longitude,
       miles: newMiles,
       startTime,
+      topSpeed,
+      secondsOver80,
+      secondsOver90,
+      lastSpeedTime: speedNow,
+      currentStopId: bgStopId,
+      currentStopStart: bgStopStart,
     }));
 
   } catch (e) {
@@ -151,13 +224,15 @@ function statusLabel(status) {
   return status.toUpperCase();
 }
 
-function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip, unreadCount, onChatPress }) {
+function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, activeTrip, unreadCount, onChatPress }) {
   const isDesignated = trip.designated_driver_id === currentUserId;
   const isFlyTrip = trip.trip_type === 'fly';
   const isActive = activeTrip?.id === trip.id;
+  const isPaused = isActive && activeTrip.paused;
 
   const canStart = isDesignated && trip.status === 'pending' && !activeTrip;
-  const canEnd = isDesignated && trip.status === 'in_progress' && isActive;
+  const canPause = isDesignated && trip.status === 'in_progress' && isActive && !isPaused;
+  const canResume = isDesignated && trip.status === 'in_progress' && isActive && isPaused;
   const waitingForDesignated = !isDesignated && trip.trip_type === 'drive' && trip.status === 'pending';
 
   return (
@@ -187,10 +262,20 @@ function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip, unreadCount
 
       {trip.notes ? <Text style={s.notes}>{trip.notes}</Text> : null}
 
-      {isActive && (
-        <View style={s.liveRow}>
-          <View style={s.liveDot} />
-          <Text style={s.liveText}>TRACKING</Text>
+      {isActive && !isPaused && (
+        <View style={[s.liveRow, activeTrip.stale && s.liveRowStale]}>
+          <View style={[s.liveDot, activeTrip.stale && s.liveDotStale]} />
+          <Text style={[s.liveText, activeTrip.stale && s.liveTextStale]}>
+            {activeTrip.stale ? 'RECONNECTING...' : 'TRACKING'}
+          </Text>
+          <Text style={s.liveMiles}>{(activeTrip.miles ?? 0).toFixed(1)} mi  ·  {formatDuration(activeTrip.elapsed ?? 0)}</Text>
+        </View>
+      )}
+
+      {isPaused && (
+        <View style={s.pausedRow}>
+          <Text style={s.pausedIcon}>⏸</Text>
+          <Text style={s.pausedText}>PAUSED</Text>
           <Text style={s.liveMiles}>{(activeTrip.miles ?? 0).toFixed(1)} mi  ·  {formatDuration(activeTrip.elapsed ?? 0)}</Text>
         </View>
       )}
@@ -201,10 +286,26 @@ function TripCard({ trip, currentUserId, onStart, onEnd, activeTrip, unreadCount
         </TouchableOpacity>
       )}
 
-      {canEnd && (
-        <TouchableOpacity style={s.endBtn} onPress={() => onEnd(trip)}>
-          <Text style={s.endBtnText}>⏹ END TRIP</Text>
-        </TouchableOpacity>
+      {canPause && (
+        <View style={s.tripActions}>
+          <TouchableOpacity style={s.pauseBtn} onPress={() => onPause(trip)}>
+            <Text style={s.pauseBtnText}>⏸ PAUSE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.endBtn} onPress={() => onEnd(trip)}>
+            <Text style={s.endBtnText}>⏹ END TRIP</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {canResume && (
+        <View style={s.tripActions}>
+          <TouchableOpacity style={s.resumeBtn} onPress={() => onResume(trip)}>
+            <Text style={s.resumeBtnText}>▶ RESUME</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.endBtn} onPress={() => onEnd(trip)}>
+            <Text style={s.endBtnText}>⏹ END TRIP</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {waitingForDesignated && (
@@ -308,16 +409,31 @@ export default function MyTripsScreen({ session, navigation }) {
         const startTime = storedData?.startTime ?? Date.now();
         startTimeRef.current = startTime;
 
-        setActiveTrip({ id: inProgress.id, miles, elapsed: Math.floor((Date.now() - startTime) / 1000) });
+        const isPaused = storedData?.paused ?? false;
+        let elapsed;
+        if (isPaused && storedData?.pausedAt) {
+          // Show only active time, not pause time
+          elapsed = Math.floor((storedData.pausedAt - startTime) / 1000);
+        } else {
+          elapsed = Math.floor((Date.now() - startTime) / 1000);
+        }
+        setActiveTrip({ id: inProgress.id, miles, elapsed, paused: isPaused });
 
-        // Restart elapsed timer
-        if (timerRef.current) clearInterval(timerRef.current);
-        timerRef.current = setInterval(() => {
-          setActiveTrip(prev => prev ? {
-            ...prev,
-            elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000)
-          } : prev);
-        }, 1000);
+        // Restart elapsed timer (only if not paused)
+        if (!isPaused) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          timerRef.current = setInterval(() => {
+            setActiveTrip(prev => {
+              if (!prev) return prev;
+              const isStale = prev.lastGps && (Date.now() - prev.lastGps) > 60000;
+              return {
+                ...prev,
+                elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000),
+                stale: isStale,
+              };
+            });
+          }, 1000);
+        }
       }
 
       loadUnreadCounts(data ?? []);
@@ -431,10 +547,15 @@ export default function MyTripsScreen({ session, navigation }) {
     // Start elapsed timer
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      setActiveTrip(prev => prev ? {
-        ...prev,
-        elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000)
-      } : prev);
+      setActiveTrip(prev => {
+        if (!prev) return prev;
+        const isStale = prev.lastGps && (Date.now() - prev.lastGps) > 60000;
+        return {
+          ...prev,
+          elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000),
+          stale: isStale,
+        };
+      });
     }, 1000);
 
     // Store trip state in AsyncStorage for background task
@@ -445,6 +566,12 @@ export default function MyTripsScreen({ session, navigation }) {
       lastLon: null,
       miles: 0,
       startTime,
+      topSpeed: 0,
+      secondsOver80: 0,
+      secondsOver90: 0,
+      lastSpeedTime: null,
+      currentStopId: null,
+      currentStopStart: null,
     }));
 
     // Foreground watcher — pushes live location to driver_locations while app is open.
@@ -454,7 +581,7 @@ export default function MyTripsScreen({ session, navigation }) {
     locationWatcherRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 10 },
       async (loc) => {
-        const { latitude, longitude } = loc.coords;
+        const { latitude, longitude, speed: rawSpeed } = loc.coords;
 
         // Push live location to DB for admin Live Drivers view
         await supabase.from('driver_locations').upsert({
@@ -464,7 +591,7 @@ export default function MyTripsScreen({ session, navigation }) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'driver_id' });
 
-        // Accumulate miles in AsyncStorage (same logic as background task)
+        // Accumulate miles and speed data in AsyncStorage
         try {
           const stored = await AsyncStorage.getItem('activeTrip');
           if (!stored) return;
@@ -475,15 +602,79 @@ export default function MyTripsScreen({ session, navigation }) {
             newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
           }
 
+          // Speed tracking (rawSpeed is m/s, convert to mph)
+          // Fallback: calculate speed from distance if GPS speed unavailable (-1)
+          let speedMph = 0;
+          if (rawSpeed != null && rawSpeed >= 0) {
+            speedMph = rawSpeed * 2.237;
+          } else if (tripData.lastLat && tripData.lastLon && tripData.lastSpeedTime) {
+            const dist = getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+            const timeSec = (now - tripData.lastSpeedTime) / 1000;
+            if (timeSec > 0 && timeSec < 120) {
+              speedMph = (dist / timeSec) * 3600;
+            }
+          }
+          let topSpeed = tripData.topSpeed || 0;
+          let secondsOver80 = tripData.secondsOver80 || 0;
+          let secondsOver90 = tripData.secondsOver90 || 0;
+
+          if (speedMph > topSpeed) topSpeed = Math.round(speedMph);
+
+          const now = Date.now();
+          const elapsed = tripData.lastSpeedTime ? (now - tripData.lastSpeedTime) / 1000 : 0;
+          if (elapsed > 0 && elapsed < 120) {
+            if (speedMph > 80) secondsOver80 += elapsed;
+            if (speedMph > 90) secondsOver90 += elapsed;
+          }
+
+          // Stop tracking (under 5 mph = stopped) — writes to trip_stops table in real-time
+          let currentStopId = tripData.currentStopId;
+          let currentStopStart = tripData.currentStopStart;
+
+          if (speedMph < 5) {
+            if (!currentStopStart) {
+              // Start a new stop — insert into DB after 5 min threshold
+              currentStopStart = now;
+            } else if (!currentStopId && (now - currentStopStart) >= 5 * 60 * 1000) {
+              // 5 min threshold reached, insert stop into DB
+              const { data: stopRow } = await supabase.from('trip_stops').insert({
+                trip_id: tripData.tripId,
+                driver_id: session.user.id,
+                latitude,
+                longitude,
+                started_at: new Date(currentStopStart).toISOString(),
+              }).select('id').single();
+              if (stopRow) currentStopId = stopRow.id;
+            }
+          } else if (currentStopStart) {
+            // Movement resumed — end the stop
+            if (currentStopId) {
+              const stopDuration = Math.round((now - currentStopStart) / 60000);
+              const { error: stopEndErr } = await supabase.from('trip_stops').update({
+                ended_at: new Date().toISOString(),
+                duration_minutes: stopDuration,
+              }).eq('id', currentStopId);
+              if (stopEndErr) console.log('[Stop] End failed:', stopEndErr.message);
+            }
+            currentStopId = null;
+            currentStopStart = null;
+          }
+
           await AsyncStorage.setItem('activeTrip', JSON.stringify({
             ...tripData,
             lastLat: latitude,
             lastLon: longitude,
             miles: newMiles,
+            topSpeed,
+            secondsOver80,
+            secondsOver90,
+            lastSpeedTime: now,
+            currentStopId,
+            currentStopStart,
           }));
 
           // Update UI with new miles
-          setActiveTrip(prev => prev ? { ...prev, miles: newMiles } : prev);
+          setActiveTrip(prev => prev ? { ...prev, miles: newMiles, stale: false, lastGps: Date.now() } : prev);
         } catch {}
       }
     );
@@ -504,6 +695,175 @@ export default function MyTripsScreen({ session, navigation }) {
     });
   }
 
+  // ── Pause trip ───────────────────────────────────────────────────────────
+  async function handlePause(trip) {
+    // Stop foreground watcher
+    if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
+    // Stop background task
+    try {
+      const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
+      if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
+    } catch {}
+    // Stop elapsed timer
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    // Clear live location from map
+    await supabase.from('driver_locations').delete().eq('driver_id', session.user.id);
+    // Finalize any active stop
+    const stored = await AsyncStorage.getItem('activeTrip');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.currentStopId) {
+        const stopDuration = Math.round((Date.now() - parsed.currentStopStart) / 60000);
+        await supabase.from('trip_stops').update({
+          ended_at: new Date().toISOString(),
+          duration_minutes: stopDuration,
+        }).eq('id', parsed.currentStopId);
+      }
+      // Mark as paused in AsyncStorage
+      await AsyncStorage.setItem('activeTrip', JSON.stringify({
+        ...parsed,
+        paused: true,
+        pausedAt: Date.now(),
+        currentStopId: null,
+        currentStopStart: null,
+      }));
+    }
+    setActiveTrip(prev => prev ? { ...prev, paused: true } : prev);
+    notifyTripStatus(trip.id, 'paused');
+  }
+
+  // ── Resume trip ─────────────────────────────────────────────────────────
+  async function handleResume(trip) {
+    const permitted = await requestPermissions();
+    if (!permitted) return;
+
+    const stored = await AsyncStorage.getItem('activeTrip');
+    if (!stored) return;
+    const parsed = JSON.parse(stored);
+
+    // Adjust start time to account for pause duration
+    const pauseDuration = parsed.pausedAt ? (Date.now() - parsed.pausedAt) : 0;
+    const adjustedStartTime = parsed.startTime + pauseDuration;
+
+    // Unpause in AsyncStorage
+    await AsyncStorage.setItem('activeTrip', JSON.stringify({
+      ...parsed,
+      paused: false,
+      pausedAt: null,
+      startTime: adjustedStartTime,
+    }));
+
+    setActiveTrip(prev => prev ? { ...prev, paused: false, stale: false } : prev);
+
+    // Restart elapsed timer
+    startTimeRef.current = adjustedStartTime;
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setActiveTrip(prev => {
+        if (!prev) return prev;
+        const isStale = prev.lastGps && (Date.now() - prev.lastGps) > 60000;
+        return {
+          ...prev,
+          elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000),
+          stale: isStale,
+        };
+      });
+    }, 1000);
+
+    // Restart foreground watcher
+    if (locationWatcherRef.current) locationWatcherRef.current.remove();
+    locationWatcherRef.current = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 10 },
+      async (loc) => {
+        const { latitude, longitude, speed: rawSpeed } = loc.coords;
+        await supabase.from('driver_locations').upsert({
+          driver_id: session.user.id,
+          latitude,
+          longitude,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'driver_id' });
+
+        try {
+          const tripStored = await AsyncStorage.getItem('activeTrip');
+          if (!tripStored) return;
+          const tripData = JSON.parse(tripStored);
+          if (tripData.paused) return;
+
+          let newMiles = tripData.miles || 0;
+          if (tripData.lastLat && tripData.lastLon) {
+            newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+          }
+
+          let speedMph = 0;
+          const now = Date.now();
+          if (rawSpeed != null && rawSpeed >= 0) {
+            speedMph = rawSpeed * 2.237;
+          } else if (tripData.lastLat && tripData.lastLon && tripData.lastSpeedTime) {
+            const dist = getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+            const timeSec = (now - tripData.lastSpeedTime) / 1000;
+            if (timeSec > 0 && timeSec < 120) speedMph = (dist / timeSec) * 3600;
+          }
+
+          let topSpeed = tripData.topSpeed || 0;
+          let secondsOver80 = tripData.secondsOver80 || 0;
+          let secondsOver90 = tripData.secondsOver90 || 0;
+          if (speedMph > topSpeed) topSpeed = Math.round(speedMph);
+          const elapsed = tripData.lastSpeedTime ? (now - tripData.lastSpeedTime) / 1000 : 0;
+          if (elapsed > 0 && elapsed < 120) {
+            if (speedMph > 80) secondsOver80 += elapsed;
+            if (speedMph > 90) secondsOver90 += elapsed;
+          }
+
+          let currentStopId = tripData.currentStopId;
+          let currentStopStart = tripData.currentStopStart;
+          if (speedMph < 5) {
+            if (!currentStopStart) currentStopStart = now;
+            else if (!currentStopId && (now - currentStopStart) >= 5 * 60 * 1000) {
+              const { data: stopRow } = await supabase.from('trip_stops').insert({
+                trip_id: tripData.tripId, driver_id: session.user.id,
+                latitude, longitude, started_at: new Date(currentStopStart).toISOString(),
+              }).select('id').single();
+              if (stopRow) currentStopId = stopRow.id;
+            }
+          } else if (currentStopStart) {
+            if (currentStopId) {
+              await supabase.from('trip_stops').update({
+                ended_at: new Date().toISOString(),
+                duration_minutes: Math.round((now - currentStopStart) / 60000),
+              }).eq('id', currentStopId);
+            }
+            currentStopId = null;
+            currentStopStart = null;
+          }
+
+          await AsyncStorage.setItem('activeTrip', JSON.stringify({
+            ...tripData, lastLat: latitude, lastLon: longitude, miles: newMiles,
+            topSpeed, secondsOver80, secondsOver90, lastSpeedTime: now,
+            currentStopId, currentStopStart,
+          }));
+          setActiveTrip(prev => prev ? { ...prev, miles: newMiles, stale: false, lastGps: Date.now() } : prev);
+        } catch {}
+      }
+    );
+
+    // Restart background task
+    await Location.startLocationUpdatesAsync(LOCATION_TASK, {
+      accuracy: Location.Accuracy.High,
+      activityType: Location.ActivityType.AutomotiveNavigation,
+      timeInterval: 10000,
+      distanceInterval: 50,
+      foregroundService: {
+        notificationTitle: 'Trip in Progress',
+        notificationBody: 'Discovery Driver Portal is tracking your location.',
+        notificationColor: '#f5a623',
+      },
+      pausesUpdatesAutomatically: false,
+      showsBackgroundLocationIndicator: true,
+    });
+
+    notifyTripStatus(trip.id, 'resumed');
+  }
+
   // ── End trip ─────────────────────────────────────────────────────────────
   async function handleEnd(trip) {
     Alert.alert(
@@ -513,6 +873,28 @@ export default function MyTripsScreen({ session, navigation }) {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'End Trip', style: 'destructive', onPress: async () => {
+            // Check if trip was already ended (e.g. by geofence auto-end)
+            const { data: currentTrip } = await supabase
+              .from('trips')
+              .select('status')
+              .eq('id', trip.id)
+              .single();
+
+            if (currentTrip?.status === 'completed' || currentTrip?.status === 'finalized') {
+              // Trip already ended — just clean up local state
+              if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
+              try {
+                const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
+                if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
+              } catch {}
+              if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+              await AsyncStorage.removeItem('activeTrip');
+              setActiveTrip(null);
+              load();
+              Alert.alert('Trip Already Ended', 'This trip was automatically ended when you arrived at the dealership.');
+              return;
+            }
+
             // Stop foreground watcher and background task
             if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
             const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
@@ -521,28 +903,57 @@ export default function MyTripsScreen({ session, navigation }) {
             if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
             clearLiveLocation();
 
-            // Get final miles from AsyncStorage (background task may have updated it)
+            // Get final miles and speed data from AsyncStorage
             let finalMiles = 0;
             let finalDriveTime = 0;
+            let speedData = null;
             try {
               const stored = await AsyncStorage.getItem('activeTrip');
+              if (!stored) {
+                // AsyncStorage already cleared — geofence likely already ended this trip
+                const { data: recheck } = await supabase.from('trips').select('status').eq('id', trip.id).single();
+                if (recheck?.status === 'completed' || recheck?.status === 'finalized') {
+                  setActiveTrip(null);
+                  load();
+                  Alert.alert('Trip Already Ended', 'This trip was automatically ended when you arrived at the dealership.');
+                  return;
+                }
+              }
               if (stored) {
-                const { miles, startTime } = JSON.parse(stored);
-                finalMiles = parseFloat(miles.toFixed(1));
-                finalDriveTime = parseFloat(((Date.now() - startTime) / 3600000).toFixed(2));
+                const parsed = JSON.parse(stored);
+                finalMiles = parseFloat(parsed.miles.toFixed(1));
+                finalDriveTime = parseFloat(((Date.now() - parsed.startTime) / 3600000).toFixed(2));
+                const avgSpeed = finalDriveTime > 0 ? Math.round(finalMiles / finalDriveTime) : 0;
+                // Finalize any in-progress stop in the DB
+                if (parsed.currentStopId) {
+                  const stopDuration = Math.round((Date.now() - parsed.currentStopStart) / 60000);
+                  await supabase.from('trip_stops').update({
+                    ended_at: new Date().toISOString(),
+                    duration_minutes: stopDuration,
+                  }).eq('id', parsed.currentStopId);
+                }
+                speedData = {
+                  top_speed: parsed.topSpeed || 0,
+                  avg_speed: avgSpeed,
+                  seconds_over_80: Math.round(parsed.secondsOver80 || 0),
+                  seconds_over_90: Math.round(parsed.secondsOver90 || 0),
+                };
               }
             } catch {}
 
             await AsyncStorage.removeItem('activeTrip');
 
+            const tripUpdate = {
+              status: 'completed',
+              actual_end: new Date().toISOString(),
+              miles: finalMiles,
+              hours: finalDriveTime,
+            };
+            if (speedData) tripUpdate.speed_data = speedData;
+
             const { error: err } = await supabase
               .from('trips')
-              .update({
-                status: 'completed',
-                actual_end: new Date().toISOString(),
-                miles: finalMiles,
-                hours: finalDriveTime,
-              })
+              .update(tripUpdate)
               .eq('id', trip.id);
 
             if (err) { Alert.alert('Failed to end trip', err.message); return; }
@@ -599,6 +1010,8 @@ export default function MyTripsScreen({ session, navigation }) {
               currentUserId={session.user.id}
               onStart={handleStart}
               onEnd={handleEnd}
+              onPause={handlePause}
+              onResume={handleResume}
               activeTrip={activeTrip}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
@@ -623,6 +1036,8 @@ export default function MyTripsScreen({ session, navigation }) {
               currentUserId={session.user.id}
               onStart={handleStart}
               onEnd={handleEnd}
+              onPause={handlePause}
+              onResume={handleResume}
               activeTrip={activeTrip}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
@@ -669,13 +1084,30 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: colors.successBorder,
   },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
+  liveDotStale: { backgroundColor: colors.warning },
   liveText: { ...typography.labelSm, fontSize: 10, color: colors.success, letterSpacing: 2 },
+  liveTextStale: { color: colors.warning },
+  liveRowStale: { backgroundColor: colors.warningDim, borderColor: colors.warningBorder },
   liveMiles: { ...typography.caption, color: colors.textSecondary, marginLeft: spacing.xs },
 
   startBtn: { backgroundColor: colors.primary, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
   startBtnText: { color: colors.bg, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
-  endBtn: { borderWidth: 2, borderColor: colors.error, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
+  tripActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  pauseBtn: { flex: 1, borderWidth: 2, borderColor: colors.warning, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center' },
+  pauseBtnText: { color: colors.warning, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  resumeBtn: { flex: 1, backgroundColor: colors.success, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center' },
+  resumeBtnText: { color: colors.bg, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  endBtn: { flex: 1, borderWidth: 2, borderColor: colors.error, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center' },
   endBtnText: { color: colors.error, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  pausedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    marginTop: spacing.sm, marginBottom: spacing.xs,
+    backgroundColor: colors.warningDim, borderRadius: radius.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderWidth: 1, borderColor: colors.warningBorder,
+  },
+  pausedIcon: { fontSize: 14 },
+  pausedText: { ...typography.labelSm, fontSize: 10, color: colors.warning, letterSpacing: 2 },
   waitingText: { ...typography.captionSm, color: colors.textMuted, fontStyle: 'italic', marginTop: spacing.md, textAlign: 'center' },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },

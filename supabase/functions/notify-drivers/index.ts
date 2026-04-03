@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-drivers/index.ts
 // UPDATED: notify-drivers Edge Function
 // Deploy to: supabase/functions/notify-drivers/index.ts
 // This version ONLY sends 30-min reminders for FLY trips (not DRIVE trips)

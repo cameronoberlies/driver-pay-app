@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-broadcast/index.ts
 // notify-broadcast Edge Function
 // Sends a push notification from admin to all drivers (or all users)
 // Called directly from the app with { message, title?, target?, sender_id }

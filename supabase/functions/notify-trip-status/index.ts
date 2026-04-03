@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-trip-status/index.ts
 // notify-trip-status Edge Function
 // Sends push notification to all admins when a driver starts or ends a trip
 // Called from the driver's MyTripsScreen with { trip_id, driver_id, action: 'started' | 'ended' }
@@ -76,12 +77,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    const isStarted = action === 'started';
     const tripType = trip.trip_type === 'fly' ? 'flight' : 'drive';
-    const title = isStarted ? `🟢 Trip Started` : `🏁 Trip Ended`;
-    const body = isStarted
-      ? `${driver.name} started their ${tripType} trip to ${trip.city}`
-      : `${driver.name} ended their ${tripType} trip to ${trip.city}`;
+    let title: string;
+    let body: string;
+
+    switch (action) {
+      case 'started':
+        title = '🟢 Trip Started';
+        body = `${driver.name} started their ${tripType} trip to ${trip.city}`;
+        break;
+      case 'ended':
+        title = '🏁 Trip Ended';
+        body = `${driver.name} ended their ${tripType} trip to ${trip.city}`;
+        break;
+      case 'paused':
+        title = '⏸ Trip Paused';
+        body = `${driver.name} paused their ${tripType} trip to ${trip.city}`;
+        break;
+      case 'resumed':
+        title = '▶ Trip Resumed';
+        body = `${driver.name} resumed their ${tripType} trip to ${trip.city}`;
+        break;
+      default:
+        title = 'Trip Update';
+        body = `${driver.name}'s trip to ${trip.city} was updated`;
+    }
 
     const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
     const notifications = pushTokens.map((pushToken) => ({

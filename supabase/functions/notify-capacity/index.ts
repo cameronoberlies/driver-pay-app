@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-capacity/index.ts
 // notify-capacity Edge Function
 // Deploy to: supabase/functions/notify-capacity/index.ts
 //

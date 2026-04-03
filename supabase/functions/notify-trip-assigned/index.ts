@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-trip-assigned/index.ts
 // notify-trip-assigned Edge Function
 // Sends push notification to driver(s) when they are assigned a new trip
 // Called with { trip_id, driver_ids: [id1, id2?], city, scheduled_pickup }

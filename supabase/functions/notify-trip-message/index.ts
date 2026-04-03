@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-trip-message/index.ts
 // supabase/functions/notify-trip-message/index.ts
 // Purpose: Send push notification when a trip message is created
 // Trigger: Call this from database trigger or client-side after insert

@@ -2,6 +2,7 @@
 // Add to /screens/GeofenceActivityScreen.js
 
 import React, { useState, useEffect } from 'react';
+import { formatTimeET } from '../lib/utils';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl,
@@ -180,7 +181,10 @@ function EventCard({ event, driverName, timeAgo }) {
             <Text style={[s.cardAction, { color }]}>{action}</Text>
           </View>
         </View>
-        <Text style={s.cardTime}>{timeAgo(event.created_at)}</Text>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={s.cardTime}>{formatTimeET(event.created_at)}</Text>
+          <Text style={[s.cardTime, { fontSize: 9, color: colors.textMuted }]}>{timeAgo(event.created_at)}</Text>
+        </View>
       </View>
 
       {event.trips && (

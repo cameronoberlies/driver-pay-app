@@ -1,3 +1,4 @@
+// File: supabase/functions/notify-admins-flight/index.ts
 // Supabase Edge Function: notify-admins-flight
 // Deploy to: supabase/functions/notify-admins-flight/index.ts
 

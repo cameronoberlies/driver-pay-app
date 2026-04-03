@@ -1,7 +1,7 @@
-// File: supabase/functions/notify-stale-trips/index.ts
-// notify-stale-trips Edge Function
-// Runs daily at 2 PM ET via pg_cron
-// Sends push notification to admins for trips stuck in "completed" status for 18+ hours
+// File: supabase/functions/notify-payroll-reminder/index.ts
+// notify-payroll-reminder Edge Function
+// Runs Tuesday at 8 PM ET (midnight UTC Wednesday) via pg_cron
+// Reminds admins to finalize any outstanding trips before Wednesday payroll
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -22,14 +22,11 @@ Deno.serve(async (req) => {
       { auth: { persistSession: false } },
     );
 
-    // Find trips completed 18+ hours ago that haven't been finalized
-    const cutoff = new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString();
-
-    const { data: staleTrips, error: tripsError } = await supabaseAdmin
+    // Find all trips in 'completed' status (not yet finalized)
+    const { data: unfinalizedTrips, error: tripsError } = await supabaseAdmin
       .from('trips')
-      .select('id, city, crm_id, actual_end, driver_id')
+      .select('id, city, crm_id, driver_id, actual_end')
       .eq('status', 'completed')
-      .lt('actual_end', cutoff)
       .order('actual_end', { ascending: true });
 
     if (tripsError) {
@@ -39,9 +36,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!staleTrips || staleTrips.length === 0) {
+    if (!unfinalizedTrips || unfinalizedTrips.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, sent: 0, message: 'No stale trips' }),
+        JSON.stringify({ success: true, sent: 0, message: 'All trips finalized' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -65,20 +62,11 @@ Deno.serve(async (req) => {
     }
 
     // Build notification
-    let title: string;
-    let body: string;
-
-    if (staleTrips.length === 1) {
-      const trip = staleTrips[0];
-      const label = trip.crm_id || trip.city;
-      title = 'Trip Awaiting Finalization';
-      body = `Trip ${label} has been completed for 18+ hours and needs to be finalized.`;
-    } else {
-      title = `${staleTrips.length} Trips Awaiting Finalization`;
-      const labels = staleTrips.slice(0, 3).map((t) => t.crm_id || t.city).join(', ');
-      const extra = staleTrips.length > 3 ? ` and ${staleTrips.length - 3} more` : '';
-      body = `${labels}${extra} — completed 18+ hours ago.`;
-    }
+    const count = unfinalizedTrips.length;
+    const title = 'Payroll Reminder';
+    const labels = unfinalizedTrips.slice(0, 3).map((t) => t.crm_id || t.city || 'Unknown').join(', ');
+    const extra = count > 3 ? ` and ${count - 3} more` : '';
+    const body = `${count} trip${count > 1 ? 's' : ''} still need finalization before tomorrow's payroll: ${labels}${extra}`;
 
     const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
     const notifications = pushTokens.map((pushToken) => ({
@@ -86,7 +74,7 @@ Deno.serve(async (req) => {
       sound: 'default' as const,
       title,
       body,
-      data: { type: 'stale_trips', trip_ids: staleTrips.map((t) => t.id) },
+      data: { type: 'payroll_reminder', trip_ids: unfinalizedTrips.map((t) => t.id) },
     }));
 
     const pushResponse = await fetch(EXPO_PUSH_URL, {
@@ -101,10 +89,11 @@ Deno.serve(async (req) => {
     await supabaseAdmin.from('system_logs').insert({
       source: 'edge_function',
       level: 'info',
-      event: 'stale_trips_notified',
-      message: `Notified admins about ${staleTrips.length} stale trip(s)`,
+      event: 'payroll_reminder_sent',
+      message: `Reminded admins about ${count} unfinalized trip(s)`,
       metadata: {
-        trip_ids: staleTrips.map((t) => t.id),
+        trip_count: count,
+        trip_ids: unfinalizedTrips.map((t) => t.id),
         recipients: pushTokens.length,
       },
     });
@@ -112,7 +101,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        stale_trips: staleTrips.length,
+        unfinalized: count,
         sent: pushTokens.length,
         expo_response: pushResult,
       }),

@@ -16,6 +16,7 @@ import {
 } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import * as Location from "expo-location";
 import { supabase } from "./lib/supabase";
 import { colors, spacing, radius, typography } from "./lib/theme";
 import LoginScreen from "./screens/LoginScreen";
@@ -268,7 +269,12 @@ export default function App() {
         .single();
       if (error) {
         if (!profileLoadedRef.current) {
-          await supabase.auth.signOut();
+          // Don't sign out if there's an active trip — session may recover
+          const AsyncStorageCheck = require('@react-native-async-storage/async-storage').default;
+          const activeTrip = await AsyncStorageCheck.getItem('activeTrip');
+          if (!activeTrip) {
+            await supabase.auth.signOut();
+          }
         }
         return;
       }
@@ -318,7 +324,18 @@ export default function App() {
       let s = session;
       if (s && s.expires_at * 1000 < Date.now()) {
         const { data } = await supabase.auth.refreshSession();
-        s = data?.session ?? null;
+        if (data?.session) {
+          s = data.session;
+        } else {
+          // Refresh failed — keep expired session if active trip exists
+          const AsyncStorageCheck = require('@react-native-async-storage/async-storage').default;
+          const activeTrip = await AsyncStorageCheck.getItem('activeTrip');
+          if (activeTrip) {
+            s = session; // Keep the old session, will retry on next foreground
+          } else {
+            s = null;
+          }
+        }
       }
       setSession(s);
       if (s) await loadProfile(s);
@@ -389,8 +406,33 @@ export default function App() {
     );
 
     notificationListener.current =
-      Notifications.addNotificationReceivedListener((notification) => {
+      Notifications.addNotificationReceivedListener(async (notification) => {
         console.log("Notification received:", notification);
+
+        // Handle silent push to wake location tracking
+        const data = notification.request?.content?.data;
+        if (data?.type === 'wake_location' && data?.silent) {
+          try {
+            const loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
+            });
+            const { latitude, longitude } = loc.coords;
+
+            const currentSession = await supabase.auth.getSession();
+            const uid = currentSession?.data?.session?.user?.id;
+            if (uid) {
+              await supabase.from('driver_locations').upsert({
+                driver_id: uid,
+                latitude,
+                longitude,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'driver_id' });
+              console.log('[Wake] Location updated via silent push');
+            }
+          } catch (e) {
+            console.log('[Wake] Failed:', e.message);
+          }
+        }
       });
 
     responseListener.current =

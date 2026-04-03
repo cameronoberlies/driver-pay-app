@@ -53,7 +53,8 @@ export default function MileageCostsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
-  const [activeChart, setActiveChart] = useState(0); // 0=variance, 1=miles, 2=efficiency, 3=trip types
+  const [activeChart, setActiveChart] = useState(0); // 0=variance, 1=miles, 2=efficiency, 3=trip types, 4=speed
+  const [speedDriver, setSpeedDriver] = useState('all');
 
   async function load() {
     setError(false);
@@ -153,14 +154,32 @@ export default function MileageCostsScreen() {
     };
   })();
 
-  // ── Chart 3: Cost per Mile Efficiency ───────────────────────────────────
-  const efficiencyData = drivers.map(d => {
-    const de = weekEntries.filter(e => e.driver_id === d.id);
-    const miles = de.reduce((t, e) => t + Number(e.miles ?? 0), 0);
-    const actual = de.reduce((t, e) => t + Number(e.actual_cost ?? 0), 0);
-    const costPerMile = miles > 0 ? actual / miles : 0;
-    return { name: d.name, miles, actual, costPerMile };
-  }).filter(d => d.miles > 0).sort((a, b) => a.costPerMile - b.costPerMile);
+  // ── Chart 3: Cost per Mile Efficiency (total) ───────────────────────────
+  const totalCostPerMile = totalMiles > 0 ? totalActual / totalMiles : 0;
+  const efficiencyTrend = (() => {
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+      const { start, end } = getWeekBounds(i);
+      const wkEntries = entries.filter(e => {
+        const d = new Date(e.date + 'T12:00:00');
+        return d >= start && d <= end;
+      });
+      const miles = wkEntries.reduce((t, e) => t + Number(e.miles ?? 0), 0);
+      const actual = wkEntries.reduce((t, e) => t + Number(e.actual_cost ?? 0), 0);
+      weeks.push({
+        label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        cpm: miles > 0 ? actual / miles : 0,
+      });
+    }
+    return {
+      labels: weeks.map(w => w.label),
+      datasets: [{
+        data: weeks.map(w => parseFloat(w.cpm.toFixed(2))),
+        color: (opacity = 1) => `rgba(74, 232, 133, ${opacity})`,
+        strokeWidth: 2,
+      }],
+    };
+  })();
 
   // ── Chart 4: Trip Type Breakdown (pie) ──────────────────────────────────
   const tripTypeData = (() => {
@@ -181,6 +200,42 @@ export default function MileageCostsScreen() {
       { name: `Drive (${driveCount})`, population: driveCount, color: '#f5a623', legendFontColor: '#f5a623', legendFontSize: 12 },
     ].filter(d => d.population > 0);
   })();
+
+  // ── Chart 5: Speed by Driver Over Time ───────────────────────────────────
+  const speedChartData = (() => {
+    const tripsWithSpeed = trips
+      .filter(t => t.speed_data && t.actual_start)
+      .filter(t => speedDriver === 'all' || t.driver_id === speedDriver || t.designated_driver_id === speedDriver)
+      .sort((a, b) => new Date(a.actual_start) - new Date(b.actual_start))
+      .slice(-15); // Last 15 trips
+
+    if (tripsWithSpeed.length === 0) {
+      return null;
+    }
+
+    return {
+      labels: tripsWithSpeed.map(t =>
+        new Date(t.actual_start).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
+      ),
+      datasets: [
+        {
+          data: tripsWithSpeed.map(t => t.speed_data.top_speed || 0),
+          color: (opacity = 1) => `rgba(232, 90, 74, ${opacity})`,
+          strokeWidth: 2,
+        },
+        {
+          data: tripsWithSpeed.map(t => t.speed_data.avg_speed || 0),
+          color: (opacity = 1) => `rgba(245, 166, 35, ${opacity})`,
+          strokeWidth: 2,
+        },
+        // Invisible datasets for threshold reference lines
+        { data: tripsWithSpeed.map(() => 80), color: () => 'transparent', strokeWidth: 0, withDots: false },
+      ],
+      legend: ['Top Speed', 'Avg Speed'],
+    };
+  })();
+
+  const speedDriverName = speedDriver === 'all' ? 'All Drivers' : (drivers.find(d => d.id === speedDriver)?.name || 'Unknown');
 
   // ── Render ───────────────────────────────────────────────────────────────
   if (loading) return <View style={s.center}><ActivityIndicator color="#f5a623" /></View>;
@@ -229,7 +284,7 @@ export default function MileageCostsScreen() {
       </View>
 
       {/* Chart Tabs */}
-      <View style={s.chartTabs}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.chartTabs} contentContainerStyle={s.chartTabsContent}>
         <TouchableOpacity
           style={[s.chartTab, activeChart === 0 && s.chartTabActive]}
           onPress={() => setActiveChart(0)}
@@ -254,7 +309,13 @@ export default function MileageCostsScreen() {
         >
           <Text style={[s.chartTabText, activeChart === 3 && s.chartTabTextActive]}>TYPES</Text>
         </TouchableOpacity>
-      </View>
+        <TouchableOpacity
+          style={[s.chartTab, activeChart === 4 && s.chartTabActive]}
+          onPress={() => setActiveChart(4)}
+        >
+          <Text style={[s.chartTabText, activeChart === 4 && s.chartTabTextActive]}>SPEED</Text>
+        </TouchableOpacity>
+      </ScrollView>
 
       {/* Chart Container */}
       <View style={s.chartContainer}>
@@ -299,31 +360,29 @@ export default function MileageCostsScreen() {
 
         {activeChart === 2 && (
           <View>
-            <Text style={s.chartTitle}>Cost per Mile Efficiency</Text>
-            <View style={s.efficiencyCards}>
-              {efficiencyData.length === 0 ? (
-                <Text style={s.emptyText}>No data this week</Text>
-              ) : (
-                efficiencyData.map((d, i) => {
-                  const avgCostPerMile = efficiencyData.reduce((t, e) => t + e.costPerMile, 0) / efficiencyData.length;
-                  const isEfficient = d.costPerMile <= avgCostPerMile;
-                  return (
-                    <View key={d.name} style={[s.effCard, { borderLeftColor: isEfficient ? '#4ae885' : '#e85a4a' }]}>
-                      <View style={s.effHeader}>
-                        <Text style={s.effName}>{d.name}</Text>
-                        <Text style={[s.effCost, { color: isEfficient ? '#4ae885' : '#e85a4a' }]}>
-                          {fmtMoney(d.costPerMile)}/mi
-                        </Text>
-                      </View>
-                      <View style={s.effStats}>
-                        <Text style={s.effStat}>{d.miles.toFixed(1)} mi</Text>
-                        <Text style={s.effStat}>{fmtMoney(d.actual)} total</Text>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
+            <Text style={s.chartTitle}>Cost per Mile (8 Weeks)</Text>
+            <View style={s.effSummary}>
+              <Text style={s.effSummaryLabel}>THIS WEEK</Text>
+              <Text style={s.effSummaryValue}>{fmtMoney(totalCostPerMile)}/mi</Text>
+              <Text style={s.effSummaryDetail}>{totalMiles.toFixed(0)} mi · {fmtMoney(totalActual)} actual</Text>
             </View>
+            <LineChart
+              data={efficiencyTrend}
+              width={chartWidth}
+              height={220}
+              yAxisLabel="$"
+              chartConfig={{
+                ...chartConfig,
+                color: (opacity = 1) => `rgba(74, 232, 133, ${opacity})`,
+              }}
+              bezier
+              style={s.chart}
+              withInnerLines
+              withOuterLines
+              withVerticalLines={false}
+              withHorizontalLines
+              fromZero
+            />
           </View>
         )}
 
@@ -343,46 +402,73 @@ export default function MileageCostsScreen() {
             />
           </View>
         )}
+
+        {activeChart === 4 && (
+          <View>
+            <Text style={s.chartTitle}>Speed Tracking — {speedDriverName}</Text>
+
+            {/* Driver Selector */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.speedDriverScroll}>
+              <TouchableOpacity
+                style={[s.speedDriverPill, speedDriver === 'all' && s.speedDriverPillActive]}
+                onPress={() => setSpeedDriver('all')}
+              >
+                <Text style={[s.speedDriverText, speedDriver === 'all' && s.speedDriverTextActive]}>All</Text>
+              </TouchableOpacity>
+              {drivers.map(d => (
+                <TouchableOpacity
+                  key={d.id}
+                  style={[s.speedDriverPill, speedDriver === d.id && s.speedDriverPillActive]}
+                  onPress={() => setSpeedDriver(d.id)}
+                >
+                  <Text style={[s.speedDriverText, speedDriver === d.id && s.speedDriverTextActive]}>
+                    {d.name.split(' ')[0]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {speedChartData ? (
+              <>
+                <LineChart
+                  data={speedChartData}
+                  width={chartWidth}
+                  height={220}
+                  yAxisSuffix=" mph"
+                  chartConfig={{
+                    ...chartConfig,
+                    color: (opacity = 1) => `rgba(232, 90, 74, ${opacity})`,
+                  }}
+                  bezier
+                  style={s.chart}
+                  withInnerLines
+                  withOuterLines
+                  withVerticalLines={false}
+                  withHorizontalLines
+                  decorator={() => (
+                    // 80 mph threshold line
+                    <View />
+                  )}
+                />
+                <View style={s.speedLegend}>
+                  <View style={s.speedLegendItem}>
+                    <View style={[s.speedLegendDot, { backgroundColor: '#e85a4a' }]} />
+                    <Text style={s.speedLegendText}>Top Speed</Text>
+                  </View>
+                  <View style={s.speedLegendItem}>
+                    <View style={[s.speedLegendDot, { backgroundColor: '#f5a623' }]} />
+                    <Text style={s.speedLegendText}>Avg Speed</Text>
+                  </View>
+                  <Text style={[s.speedLegendText, { color: '#666' }]}>80 mph limit ┈</Text>
+                </View>
+              </>
+            ) : (
+              <Text style={s.emptyText}>No speed data available yet</Text>
+            )}
+          </View>
+        )}
       </View>
 
-      {/* Driver Breakdown (kept from original) */}
-      <Text style={s.sectionTitle}>BY DRIVER THIS WEEK</Text>
-      {drivers.map(driver => {
-        const de = weekEntries.filter(e => e.driver_id === driver.id);
-        const actual = de.reduce((t, e) => t + Number(e.actual_cost ?? 0), 0);
-        const estimated = de.reduce((t, e) => t + Number(e.estimated_cost ?? 0), 0);
-        const miles = de.reduce((t, e) => t + Number(e.miles ?? 0), 0);
-        const v = actual - estimated;
-
-        return (
-          <View key={driver.id} style={s.card}>
-            <Text style={s.cardName}>
-              {driver.name}
-              {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
-            </Text>
-            <View style={s.cardRow}>
-              <View style={s.cardStat}>
-                <Text style={s.cardStatLabel}>MILES</Text>
-                <Text style={s.cardStatValue}>{miles.toFixed(1)}</Text>
-              </View>
-              <View style={s.cardStat}>
-                <Text style={s.cardStatLabel}>ACTUAL</Text>
-                <Text style={s.cardStatValue}>{fmtMoney(actual)}</Text>
-              </View>
-              <View style={s.cardStat}>
-                <Text style={s.cardStatLabel}>EST</Text>
-                <Text style={s.cardStatValue}>{fmtMoney(estimated)}</Text>
-              </View>
-              <View style={s.cardStat}>
-                <Text style={s.cardStatLabel}>VAR</Text>
-                <Text style={[s.cardStatValue, { color: v > 0 ? '#e85a4a' : '#4ae885' }]}>
-                  {v >= 0 ? '+' : ''}{fmtMoney(v)}
-                </Text>
-              </View>
-            </View>
-          </View>
-        );
-      })}
     </ScrollView>
   );
 }
@@ -398,8 +484,9 @@ const s = StyleSheet.create({
   statValue: { fontSize: 20, fontWeight: '900', color: '#f5a623' },
   
   // Chart tabs
-  chartTabs: { flexDirection: 'row', gap: 8, marginTop: 24, marginBottom: 16 },
-  chartTab: { flex: 1, paddingVertical: 10, backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', alignItems: 'center' },
+  chartTabs: { marginTop: 24, marginBottom: 16 },
+  chartTabsContent: { flexDirection: 'row', gap: 8 },
+  chartTab: { paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', alignItems: 'center' },
   chartTabActive: { backgroundColor: 'rgba(245, 166, 35, 0.15)', borderColor: '#f5a623' },
   chartTabText: { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, color: '#555' },
   chartTabTextActive: { color: '#f5a623' },
@@ -409,15 +496,37 @@ const s = StyleSheet.create({
   chartTitle: { fontSize: 10, color: '#f5a623', letterSpacing: 2, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
   chart: { marginVertical: 8, borderRadius: 0 },
   
-  // Efficiency cards
-  efficiencyCards: { gap: 12 },
-  effCard: { backgroundColor: '#0a0a0a', borderWidth: 1, borderColor: '#1e1e1e', borderLeftWidth: 3, padding: 14 },
-  effHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  effName: { fontSize: 14, fontWeight: '800', color: '#fff' },
-  effCost: { fontSize: 16, fontWeight: '900' },
-  effStats: { flexDirection: 'row', gap: 16 },
-  effStat: { fontSize: 11, color: '#666' },
+  // Efficiency summary
+  effSummary: {
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e1e1e',
+  },
+  effSummaryLabel: { fontSize: 9, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 4 },
+  effSummaryValue: { fontSize: 28, fontWeight: '900', color: '#4ae885' },
+  effSummaryDetail: { fontSize: 11, color: '#666', marginTop: 4 },
   emptyText: { fontSize: 12, color: '#555', textAlign: 'center', paddingVertical: 40 },
+
+  // Speed chart
+  speedDriverScroll: { marginBottom: 16 },
+  speedDriverPill: {
+    paddingHorizontal: 14, paddingVertical: 6, marginRight: 8,
+    backgroundColor: '#0a0a0a', borderWidth: 1, borderColor: '#1e1e1e', borderRadius: 4,
+  },
+  speedDriverPillActive: {
+    backgroundColor: 'rgba(245, 166, 35, 0.15)', borderColor: '#f5a623',
+  },
+  speedDriverText: { fontSize: 11, fontWeight: '700', color: '#555', letterSpacing: 0.5 },
+  speedDriverTextActive: { color: '#f5a623' },
+  speedLegend: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    gap: 16, marginTop: 8,
+  },
+  speedLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  speedLegendDot: { width: 8, height: 8, borderRadius: 4 },
+  speedLegendText: { fontSize: 10, color: '#999', fontWeight: '600' },
   
   // Driver breakdown (original)
   sectionTitle: { fontSize: 10, color: '#444', letterSpacing: 2, fontWeight: '700', marginTop: 20, marginBottom: 12 },

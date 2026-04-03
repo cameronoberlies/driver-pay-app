@@ -1,3 +1,4 @@
+// File: supabase/functions/flight-proxy/index.ts
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const FLIGHT_API_URL = 'http://45.33.120.41:5000'
