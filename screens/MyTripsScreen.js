@@ -6,7 +6,8 @@ import {
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
-import { getDistanceMiles, formatDuration } from '../lib/utils';
+import { getDistanceMiles, formatDuration, formatTimeET } from '../lib/utils';
+import { logEvent } from '../lib/systemLog';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
 import useResponsive from '../lib/useResponsive';
 
@@ -730,6 +731,7 @@ export default function MyTripsScreen({ session, navigation }) {
     }
     setActiveTrip(prev => prev ? { ...prev, paused: true } : prev);
     notifyTripStatus(trip.id, 'paused');
+    logEvent('info', 'trip_paused', `Trip to ${trip.city} paused`, { trip_id: trip.id, miles: activeTrip?.miles });
   }
 
   // ── Resume trip ─────────────────────────────────────────────────────────
@@ -862,6 +864,7 @@ export default function MyTripsScreen({ session, navigation }) {
     });
 
     notifyTripStatus(trip.id, 'resumed');
+    logEvent('info', 'trip_resumed', `Trip to ${trip.city} resumed`, { trip_id: trip.id, miles: activeTrip?.miles });
   }
 
   // ── End trip ─────────────────────────────────────────────────────────────

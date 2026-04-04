@@ -248,6 +248,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [showUpdateToast, setShowUpdateToast] = useState(false);
+  const [permissionWarning, setPermissionWarning] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -391,12 +392,13 @@ export default function App() {
             const geofenceActive = await GeofenceManager.isActive();
             if (!geofenceActive && geofenceStartedRef.current) {
               console.log("[Geofence] Re-registering after iOS suspension");
-              const restarted = await GeofenceManager.start();
+              const restartResult = await GeofenceManager.start();
+              const restartOk = restartResult?.success ?? restartResult;
               logEvent(
-                restarted ? 'info' : 'warn',
+                restartOk ? 'info' : 'warn',
                 'geofence_re_registered',
-                `Geofence re-registration ${restarted ? 'succeeded' : 'failed'} after foreground resume`,
-                { device_os: Platform.OS }
+                `Geofence re-registration ${restartOk ? 'succeeded' : 'failed'} after foreground resume${restartResult?.reason ? ` — ${restartResult.reason}` : ''}`,
+                { device_os: Platform.OS, reason: restartResult?.reason }
               );
             }
           }
@@ -455,21 +457,43 @@ export default function App() {
     };
   }, []);
 
+  // Check permissions for drivers
+  useEffect(() => {
+    if (profile?.role !== "driver") return;
+    (async () => {
+      const warnings = [];
+      const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+      if (bgStatus !== 'granted') {
+        warnings.push('Location must be set to "Always" for trip tracking to work in the background.');
+      }
+      const { status: notifStatus } = await Notifications.getPermissionsAsync();
+      if (notifStatus !== 'granted') {
+        warnings.push('Notifications are disabled. You may miss trip assignments and alerts.');
+      }
+      if (warnings.length > 0) {
+        setPermissionWarning(warnings.join('\n\n'));
+      } else {
+        setPermissionWarning(null);
+      }
+    })();
+  }, [profile]);
+
   const geofenceStartedRef = useRef(false);
   useEffect(() => {
     if (profile?.role === "driver" && !geofenceStartedRef.current) {
       geofenceStartedRef.current = true;
-      GeofenceManager.start().then((success) => {
+      GeofenceManager.start().then((result) => {
+        const ok = result?.success ?? result;
         logEvent(
-          success ? 'info' : 'warn',
-          success ? 'geofence_registered' : 'geofence_registration_failed',
-          `Geofence ${success ? 'registered' : 'failed'} for ${profile.name}`,
-          { driver_id: session?.user?.id, device_os: Platform.OS }
+          ok ? 'info' : 'warn',
+          ok ? 'geofence_registered' : 'geofence_registration_failed',
+          `Geofence ${ok ? 'registered' : 'failed'} for ${profile.name}${result?.reason ? ` — ${result.reason}` : ''}`,
+          { driver_id: session?.user?.id, device_os: Platform.OS, reason: result?.reason }
         );
         setTimeout(async () => {
           const isActive = await GeofenceManager.isActive();
           console.log("🔍 Geofence registered:", isActive);
-          if (!isActive && success) {
+          if (!isActive && ok) {
             logEvent('warn', 'geofence_inactive_after_start',
               `Geofence reported inactive 3s after successful start for ${profile.name}`,
               { driver_id: session?.user?.id }
@@ -577,6 +601,20 @@ export default function App() {
             <DriverTabBar active={activeTab} onSelect={handleTabSelect} />
           </>
         )}
+        {permissionWarning && (
+          <View style={styles.permissionBanner}>
+            <Text style={styles.permissionText}>{permissionWarning}</Text>
+            <TouchableOpacity onPress={() => {
+              if (Platform.OS === 'ios') {
+                const { Linking } = require('react-native');
+                Linking.openSettings();
+              }
+              setPermissionWarning(null);
+            }}>
+              <Text style={styles.permissionAction}>OPEN SETTINGS</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {showUpdateToast && (
           <View style={styles.updateToast}>
             <Text style={styles.updateToastText}>Applying update...</Text>
@@ -595,6 +633,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   app: { flex: 1, backgroundColor: colors.bg },
+  permissionBanner: {
+    position: "absolute",
+    top: 60,
+    left: 16,
+    right: 16,
+    backgroundColor: colors.error,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    zIndex: 100,
+  },
+  permissionText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  permissionAction: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 2,
+    textDecorationLine: "underline",
+  },
   updateToast: {
     position: "absolute",
     bottom: 100,

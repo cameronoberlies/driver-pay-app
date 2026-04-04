@@ -90,7 +90,7 @@ export default function LiveDriversScreen() {
     iconAnchor: [9, 9],
   });
   L.marker([35.270367, -81.496247], { icon: dealershipIcon }).addTo(map).bindPopup('Discovery Automotive');
-  L.circle([35.270367, -81.496247], { radius: 150, color: '#f5a623', fillColor: '#f5a623', fillOpacity: 0.1, weight: 1, dashArray: '5,5' }).addTo(map);
+  L.circle([35.270367, -81.496247], { radius: 300, color: '#f5a623', fillColor: '#f5a623', fillOpacity: 0.1, weight: 1, dashArray: '5,5' }).addTo(map);
 
   let markers = {};
 
@@ -262,22 +262,69 @@ async function reverseGeocode(lat, lon) {
 }
 
 function TripLogsContent({ profiles }) {
+  const [mode, setMode] = useState('live'); // 'live' | 'history'
   const [trips, setTrips] = useState([]);
   const [stops, setStops] = useState([]);
+  const [pauseEvents, setPauseEvents] = useState([]);
   const [stopLocations, setStopLocations] = useState({});
   const [loading, setLoading] = useState(true);
 
-  async function loadLogs() {
-    const [{ data: activeTrips }, { data: activeStops }] = await Promise.all([
+  // History filters
+  const [historyDate, setHistoryDate] = useState(new Date());
+  const [historyDriver, setHistoryDriver] = useState('all');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const drivers = profiles.filter(p => p.role === 'driver');
+
+  async function loadLive() {
+    const [{ data: activeTrips }, { data: activeStops }, { data: pauses }] = await Promise.all([
       supabase.from('trips').select('*').in('status', ['in_progress']),
       supabase.from('trip_stops').select('*').order('started_at', { ascending: false }).limit(50),
+      supabase.from('system_logs').select('*').in('event', ['trip_paused', 'trip_resumed']).order('created_at', { ascending: false }).limit(50),
     ]);
     setTrips(activeTrips ?? []);
     setStops(activeStops ?? []);
+    setPauseEvents(pauses ?? []);
     setLoading(false);
+    geocodeStops(activeStops ?? []);
+  }
 
-    // Reverse geocode stop locations
-    for (const stop of (activeStops ?? [])) {
+  async function loadHistory() {
+    setLoading(true);
+    const dateStr = historyDate.toISOString().split('T')[0];
+    let tripQuery = supabase.from('trips').select('*')
+      .in('status', ['completed', 'finalized'])
+      .gte('actual_start', dateStr + 'T00:00:00')
+      .lte('actual_start', dateStr + 'T23:59:59')
+      .order('actual_start', { ascending: false });
+
+    if (historyDriver !== 'all') {
+      tripQuery = tripQuery.or(`driver_id.eq.${historyDriver},designated_driver_id.eq.${historyDriver}`);
+    }
+
+    const { data: histTrips } = await tripQuery;
+    const tripIds = (histTrips ?? []).map(t => t.id);
+
+    let histStops = [];
+    let histPauses = [];
+    if (tripIds.length > 0) {
+      const [{ data: s }, { data: p }] = await Promise.all([
+        supabase.from('trip_stops').select('*').in('trip_id', tripIds).order('started_at', { ascending: false }),
+        supabase.from('system_logs').select('*').in('event', ['trip_paused', 'trip_resumed']).order('created_at', { ascending: false }).limit(100),
+      ]);
+      histStops = s ?? [];
+      histPauses = (p ?? []).filter(pe => tripIds.includes(pe.metadata?.trip_id));
+    }
+
+    setTrips(histTrips ?? []);
+    setStops(histStops);
+    setPauseEvents(histPauses);
+    setLoading(false);
+    geocodeStops(histStops);
+  }
+
+  function geocodeStops(stopsToGeocode) {
+    for (const stop of stopsToGeocode) {
       if (stop.latitude && stop.longitude && !stopLocations[stop.id]) {
         reverseGeocode(stop.latitude, stop.longitude).then(loc => {
           if (loc) setStopLocations(prev => ({ ...prev, [stop.id]: loc }));
@@ -287,28 +334,109 @@ function TripLogsContent({ profiles }) {
   }
 
   useEffect(() => {
-    loadLogs();
-    const interval = setInterval(loadLogs, 15000);
-    return () => clearInterval(interval);
-  }, []);
+    if (mode === 'live') {
+      loadLive();
+      const interval = setInterval(loadLive, 15000);
+      return () => clearInterval(interval);
+    } else {
+      loadHistory();
+    }
+  }, [mode, historyDate, historyDriver]);
 
   function getName(id) {
     return profiles.find(p => p.id === id)?.name ?? 'Unknown';
   }
 
-  if (loading) return <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />;
+  const DateTimePicker = require('@react-native-community/datetimepicker').default;
+  const Platform = require('react-native').Platform;
 
-  if (trips.length === 0) {
-    return <Text style={{ color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 13 }}>No active trips</Text>;
-  }
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
-      {trips.map(trip => {
+      {/* Mode Toggle */}
+      <View style={logStyles.modeRow}>
+        <TouchableOpacity
+          style={[logStyles.modeBtn, mode === 'live' && logStyles.modeBtnActive]}
+          onPress={() => setMode('live')}
+        >
+          <Text style={[logStyles.modeBtnText, mode === 'live' && logStyles.modeBtnTextActive]}>LIVE</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[logStyles.modeBtn, mode === 'history' && logStyles.modeBtnActive]}
+          onPress={() => setMode('history')}
+        >
+          <Text style={[logStyles.modeBtnText, mode === 'history' && logStyles.modeBtnTextActive]}>HISTORY</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* History Filters */}
+      {mode === 'history' && (
+        <View style={logStyles.filterRow}>
+          <TouchableOpacity style={logStyles.dateBtn} onPress={() => setShowDatePicker(true)}>
+            <Text style={logStyles.dateBtnText}>
+              {historyDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </Text>
+          </TouchableOpacity>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+            <TouchableOpacity
+              style={[logStyles.driverPill, historyDriver === 'all' && logStyles.driverPillActive]}
+              onPress={() => setHistoryDriver('all')}
+            >
+              <Text style={[logStyles.driverPillText, historyDriver === 'all' && logStyles.driverPillTextActive]}>All</Text>
+            </TouchableOpacity>
+            {drivers.map(d => (
+              <TouchableOpacity
+                key={d.id}
+                style={[logStyles.driverPill, historyDriver === d.id && logStyles.driverPillActive]}
+                onPress={() => setHistoryDriver(d.id)}
+              >
+                <Text style={[logStyles.driverPillText, historyDriver === d.id && logStyles.driverPillTextActive]}>
+                  {d.name.split(' ')[0]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {mode === 'history' && showDatePicker && (
+        <View>
+          <DateTimePicker
+            value={historyDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            themeVariant="dark"
+            textColor="#fff"
+            onChange={(event, date) => {
+              if (Platform.OS === 'android') setShowDatePicker(false);
+              if (date) setHistoryDate(date);
+            }}
+            maximumDate={new Date()}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => setShowDatePicker(false)}>
+              <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 11, letterSpacing: 1.5 }}>DONE</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {loading && <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />}
+
+      {!loading && trips.length === 0 && (
+        <Text style={{ color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 13 }}>
+          {mode === 'live' ? 'No active trips' : 'No trips found for this date'}
+        </Text>
+      )}
+
+      {!loading && trips.map(trip => {
         const driverName = getName(trip.designated_driver_id || trip.driver_id);
         const tripStops = stops.filter(s => s.trip_id === trip.id);
-        const activeStop = tripStops.find(s => !s.ended_at);
-        const elapsed = trip.actual_start ? Math.round((Date.now() - new Date(trip.actual_start).getTime()) / 60000) : 0;
+        const tripPauses = pauseEvents.filter(p => p.metadata?.trip_id === trip.id);
+        const activeStop = mode === 'live' ? tripStops.find(s => !s.ended_at) : null;
+        const elapsed = trip.actual_start
+          ? Math.round(((trip.actual_end ? new Date(trip.actual_end) : Date.now()) - new Date(trip.actual_start).getTime()) / 60000)
+          : 0;
 
         return (
           <View key={trip.id} style={logStyles.card}>
@@ -322,6 +450,24 @@ function TripLogsContent({ profiles }) {
                 <Text style={logStyles.elapsedLabel}>ELAPSED</Text>
               </View>
             </View>
+
+            {/* Speed data (history mode) */}
+            {mode === 'history' && trip.speed_data && trip.speed_data.top_speed > 0 && (
+              <View style={logStyles.speedRow}>
+                <Text style={logStyles.speedStat}>⚡ Top: {trip.speed_data.top_speed} mph</Text>
+                <Text style={logStyles.speedStat}>Avg: {trip.speed_data.avg_speed} mph</Text>
+                {trip.speed_data.seconds_over_80 > 0 && (
+                  <Text style={[logStyles.speedStat, { color: colors.warning }]}>
+                    {Math.round(trip.speed_data.seconds_over_80 / 60)}m &gt;80
+                  </Text>
+                )}
+                {trip.speed_data.seconds_over_90 > 0 && (
+                  <Text style={[logStyles.speedStat, { color: colors.error }]}>
+                    {Math.round(trip.speed_data.seconds_over_90 / 60)}m &gt;90
+                  </Text>
+                )}
+              </View>
+            )}
 
             {activeStop && (
               <View style={logStyles.activeStopBanner}>
@@ -356,8 +502,26 @@ function TripLogsContent({ profiles }) {
               </View>
             )}
 
-            {tripStops.length === 0 && (
-              <Text style={logStyles.noStops}>No stops recorded</Text>
+            {tripStops.length === 0 && !tripPauses.length && (
+              <Text style={logStyles.noStops}>No stops or pauses recorded</Text>
+            )}
+
+            {tripPauses.length > 0 && (
+              <View style={logStyles.stopsSection}>
+                <Text style={logStyles.stopsTitle}>PAUSES ({tripPauses.length})</Text>
+                {tripPauses.map((p, i) => (
+                  <View key={p.id || i} style={logStyles.stopRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={logStyles.stopTime}>
+                        {p.event === 'trip_paused' ? '⏸' : '▶'} {formatTimeET(p.created_at)}
+                      </Text>
+                    </View>
+                    <Text style={[logStyles.stopDuration, { color: p.event === 'trip_paused' ? colors.warning : colors.success }]}>
+                      {p.event === 'trip_paused' ? 'PAUSED' : 'RESUMED'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             )}
           </View>
         );
@@ -459,6 +623,88 @@ const logStyles = StyleSheet.create({
     ...typography.captionSm,
     color: colors.textMuted,
     marginTop: spacing.sm,
+  },
+  // Mode toggle
+  modeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+  },
+  modeBtnActive: {
+    backgroundColor: colors.primaryDim,
+    borderColor: colors.primary,
+  },
+  modeBtnText: {
+    ...typography.labelSm,
+    color: colors.textTertiary,
+    letterSpacing: 2,
+  },
+  modeBtnTextActive: {
+    color: colors.primary,
+  },
+  // History filters
+  filterRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+  },
+  dateBtn: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  dateBtnText: {
+    ...typography.captionSm,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  driverPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+  },
+  driverPillActive: {
+    backgroundColor: colors.primaryDim,
+    borderColor: colors.primary,
+  },
+  driverPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textTertiary,
+  },
+  driverPillTextActive: {
+    color: colors.primary,
+  },
+  // Speed row
+  speedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  speedStat: {
+    ...typography.captionSm,
+    color: colors.textTertiary,
   },
 });
 
