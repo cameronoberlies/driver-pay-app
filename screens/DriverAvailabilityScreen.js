@@ -180,12 +180,12 @@ export default function DriverAvailabilityScreen({ session }) {
             </View>
             {avail[day] && (
               <View style={s.doneByRow}>
-                <Text style={s.doneByLabel}>Done by</Text>
+                <Text style={s.doneByLabel}>Available until</Text>
                 <TextInput
                   style={s.timeInput}
                   value={avail[`${day}_done_by`]}
                   onChangeText={val => setAvail(a => ({ ...a, [`${day}_done_by`]: val }))}
-                  placeholder="e.g. 3:00 PM"
+                  placeholder="e.g. 9:00 PM"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="default"
                 />

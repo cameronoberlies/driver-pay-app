@@ -7,6 +7,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
 import { getDistanceMiles, formatDuration } from '../lib/utils';
+import { logEvent } from '../lib/systemLog';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
 import useResponsive from '../lib/useResponsive';
 
@@ -95,8 +96,12 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     const loc = locations[locations.length - 1];
     const { latitude, longitude, speed: rawSpeed } = loc.coords;
 
+    // Only accumulate miles if mileage tracking is active
+    // For fly trips, mileage starts at scheduled pickup time
+    const bgMileageActive = !parsed.mileageStartTime || Date.now() >= parsed.mileageStartTime;
+
     let newMiles = miles;
-    if (lastLat && lastLon) {
+    if (bgMileageActive && lastLat && lastLon) {
       // Calculate distance using Haversine formula
       const R = 3958.8; // Earth radius in miles
       const dLat = (latitude - lastLat) * Math.PI / 180;
@@ -132,9 +137,9 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     let secondsOver80 = storedOver80 || 0;
     let secondsOver90 = storedOver90 || 0;
 
-    if (speedMph > topSpeed) topSpeed = Math.round(speedMph);
+    if (bgMileageActive && speedMph > topSpeed) topSpeed = Math.round(speedMph);
     const elapsed = storedSpeedTime ? (speedNow - storedSpeedTime) / 1000 : 0;
-    if (elapsed > 0 && elapsed < 120) {
+    if (bgMileageActive && elapsed > 0 && elapsed < 120) {
       if (speedMph > 80) secondsOver80 += elapsed;
       if (speedMph > 90) secondsOver90 += elapsed;
     }
@@ -559,6 +564,10 @@ export default function MyTripsScreen({ session, navigation }) {
     }, 1000);
 
     // Store trip state in AsyncStorage for background task
+    const mileageStartTime = trip.trip_type === 'fly' && trip.scheduled_pickup
+      ? new Date(trip.scheduled_pickup).getTime()
+      : null; // null = start counting immediately (drive trips)
+
     await AsyncStorage.setItem('activeTrip', JSON.stringify({
       tripId: trip.id,
       userId: session.user.id,
@@ -572,6 +581,8 @@ export default function MyTripsScreen({ session, navigation }) {
       lastSpeedTime: null,
       currentStopId: null,
       currentStopStart: null,
+      tripType: trip.trip_type,
+      mileageStartTime,
     }));
 
     // Foreground watcher — pushes live location to driver_locations while app is open.
@@ -598,11 +609,16 @@ export default function MyTripsScreen({ session, navigation }) {
           const tripData = JSON.parse(stored);
           let newMiles = tripData.miles || 0;
 
-          if (tripData.lastLat && tripData.lastLon) {
+          // Only accumulate miles if mileage tracking is active
+          // For fly trips, mileage starts at scheduled pickup time
+          const mileageActive = !tripData.mileageStartTime || Date.now() >= tripData.mileageStartTime;
+
+          if (mileageActive && tripData.lastLat && tripData.lastLon) {
             newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
           }
 
           // Speed tracking (rawSpeed is m/s, convert to mph)
+          const now = Date.now();
           // Fallback: calculate speed from distance if GPS speed unavailable (-1)
           let speedMph = 0;
           if (rawSpeed != null && rawSpeed >= 0) {
@@ -618,11 +634,10 @@ export default function MyTripsScreen({ session, navigation }) {
           let secondsOver80 = tripData.secondsOver80 || 0;
           let secondsOver90 = tripData.secondsOver90 || 0;
 
-          if (speedMph > topSpeed) topSpeed = Math.round(speedMph);
-
-          const now = Date.now();
+          // Only track speed metrics after mileage is active
+          if (mileageActive && speedMph > topSpeed) topSpeed = Math.round(speedMph);
           const elapsed = tripData.lastSpeedTime ? (now - tripData.lastSpeedTime) / 1000 : 0;
-          if (elapsed > 0 && elapsed < 120) {
+          if (mileageActive && elapsed > 0 && elapsed < 120) {
             if (speedMph > 80) secondsOver80 += elapsed;
             if (speedMph > 90) secondsOver90 += elapsed;
           }
@@ -730,6 +745,7 @@ export default function MyTripsScreen({ session, navigation }) {
     }
     setActiveTrip(prev => prev ? { ...prev, paused: true } : prev);
     notifyTripStatus(trip.id, 'paused');
+    logEvent('info', 'trip_paused', `Trip to ${trip.city} paused`, { trip_id: trip.id });
   }
 
   // ── Resume trip ─────────────────────────────────────────────────────────
@@ -789,8 +805,10 @@ export default function MyTripsScreen({ session, navigation }) {
           const tripData = JSON.parse(tripStored);
           if (tripData.paused) return;
 
+          const resumeMileageActive = !tripData.mileageStartTime || Date.now() >= tripData.mileageStartTime;
+
           let newMiles = tripData.miles || 0;
-          if (tripData.lastLat && tripData.lastLon) {
+          if (resumeMileageActive && tripData.lastLat && tripData.lastLon) {
             newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
           }
 
@@ -807,9 +825,9 @@ export default function MyTripsScreen({ session, navigation }) {
           let topSpeed = tripData.topSpeed || 0;
           let secondsOver80 = tripData.secondsOver80 || 0;
           let secondsOver90 = tripData.secondsOver90 || 0;
-          if (speedMph > topSpeed) topSpeed = Math.round(speedMph);
+          if (resumeMileageActive && speedMph > topSpeed) topSpeed = Math.round(speedMph);
           const elapsed = tripData.lastSpeedTime ? (now - tripData.lastSpeedTime) / 1000 : 0;
-          if (elapsed > 0 && elapsed < 120) {
+          if (resumeMileageActive && elapsed > 0 && elapsed < 120) {
             if (speedMph > 80) secondsOver80 += elapsed;
             if (speedMph > 90) secondsOver90 += elapsed;
           }
@@ -862,6 +880,7 @@ export default function MyTripsScreen({ session, navigation }) {
     });
 
     notifyTripStatus(trip.id, 'resumed');
+    logEvent('info', 'trip_resumed', `Trip to ${trip.city} resumed`, { trip_id: trip.id });
   }
 
   // ── End trip ─────────────────────────────────────────────────────────────

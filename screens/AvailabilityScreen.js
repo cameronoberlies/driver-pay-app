@@ -371,17 +371,51 @@ function StatusDot({ status }) {
   );
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function getNextWeekStart() {
+  const now = new Date();
+  const day = now.getDay();
+  const daysUntilSunday = day === 0 ? 7 : 7 - day;
+  const nextSunday = new Date(now);
+  nextSunday.setDate(now.getDate() + daysUntilSunday);
+  nextSunday.setHours(0, 0, 0, 0);
+  return nextSunday;
+}
+
+function getNextWeekLabel() {
+  const start = getNextWeekStart();
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const opts = { month: 'short', day: 'numeric' };
+  return `${start.toLocaleDateString('en-US', opts)} – ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`;
+}
+
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const DAY_LABELS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+function formatDoneBy(time) {
+  if (!time) return '';
+  const [h, m] = time.split(':').map(Number);
+  if (isNaN(h)) return time;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 // ─── AvailabilityScreen ───────────────────────────────────────────────────────
 
 export default function AvailabilityScreen() {
   const { isTablet } = useResponsive();
-  const [availability, setAvailability] = useState([]);
+  const [records, setRecords] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [capacityModalVisible, setCapacityModalVisible] = useState(false);
+
+  const weekStart = getNextWeekStart().toISOString().slice(0, 10);
 
   async function load() {
     setError(false);
@@ -390,13 +424,13 @@ export default function AvailabilityScreen() {
       const [{ data: p }, { data: a }, { data: profile }] = await withTimeout(
         Promise.all([
           supabase.from('profiles').select('*').eq('role', 'driver'),
-          supabase.from('availability').select('*'),
+          supabase.from('availability').select('*').eq('week_start', weekStart),
           supabase.from('profiles').select('role').eq('id', user.id).single(),
         ]),
         TIMEOUT_MS
       );
       setProfiles(p ?? []);
-      setAvailability(a ?? []);
+      setRecords(a ?? []);
       setUserRole(profile?.role ?? null);
     } catch {
       setError(true);
@@ -410,6 +444,7 @@ export default function AvailabilityScreen() {
   function onRefresh() { setRefreshing(true); load(); }
 
   const isAdmin = userRole === 'admin';
+  const submitted = new Set(records.map(r => r.driver_id));
 
   if (loading) return (
     <View style={s.center}>
@@ -453,46 +488,58 @@ export default function AvailabilityScreen() {
           <Text style={s.capacityBtnText}>📋  MANAGE CAPACITY</Text>
         </TouchableOpacity>
 
+        {/* ── Week label ── */}
+        <Text style={s.weekLabel}>{getNextWeekLabel()}</Text>
+
         {/* ── Driver grid ── */}
         <Text style={s.sectionTitle}>DRIVER AVAILABILITY</Text>
         <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
           {profiles.map(driver => {
-            const driverAvail = DAYS.map(day => {
-              const record = availability.find(a => a.driver_id === driver.id && a.day === day);
-              return { day, available: record ? record.available : null };
-            });
+            const rec = records.find(r => r.driver_id === driver.id);
+            const hasSubmitted = submitted.has(driver.id);
 
             return (
-              <View key={driver.id} style={[s.card, isTablet && { width: '48.5%' }]}>
-                <Text style={s.driverName}>
-                  {driver.name}
-                  {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
-                </Text>
+              <View key={driver.id} style={[s.card, isTablet && { width: '48.5%' }, !hasSubmitted && s.cardNotSubmitted]}>
+                <View style={s.cardHeader}>
+                  <Text style={s.driverName}>
+                    {driver.name}
+                    {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+                  </Text>
+                  {!hasSubmitted && <Text style={s.notSubmitted}>NOT SUBMITTED</Text>}
+                  {rec?.updated_after_saturday && <Text style={s.amended}>⚠ amended</Text>}
+                </View>
                 <View style={s.daysRow}>
-                  {driverAvail.map(({ day, available }) => (
-                    <View key={day} style={[
-                      s.dayChip,
-                      available === true && s.dayAvail,
-                      available === false && s.dayUnavail,
-                    ]}>
-                      <Text style={[
-                        s.dayLabel,
-                        available === true && s.dayLabelAvail,
-                        available === false && s.dayLabelUnavail,
+                  {DAY_KEYS.map((key, i) => {
+                    const available = rec ? rec[key] : null;
+                    const doneBy = rec ? rec[`${key}_done_by`] : null;
+                    return (
+                      <View key={key} style={[
+                        s.dayChip,
+                        available === true && s.dayAvail,
+                        available === false && s.dayUnavail,
                       ]}>
-                        {day.slice(0, 2).toUpperCase()}
-                      </Text>
-                    </View>
-                  ))}
+                        <Text style={[
+                          s.dayLabel,
+                          available === true && s.dayLabelAvail,
+                          available === false && s.dayLabelUnavail,
+                        ]}>
+                          {DAY_LABELS[i]}
+                        </Text>
+                        {available && doneBy ? (
+                          <Text style={s.doneByText}>{formatDoneBy(doneBy)}</Text>
+                        ) : null}
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
             );
           })}
         </View>
 
-        {availability.length === 0 && (
+        {records.length === 0 && (
           <Text style={s.empty}>
-            No availability submitted yet. Drivers set their availability from the app.
+            No availability submitted yet for the upcoming week.
           </Text>
         )}
       </ScrollView>
@@ -652,6 +699,12 @@ const s = StyleSheet.create({
     fontWeight: '800', letterSpacing: 2,
   },
 
+  weekLabel: {
+    ...typography.captionSm,
+    color: colors.textTertiary,
+    letterSpacing: 1,
+    marginBottom: spacing.md,
+  },
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1, borderColor: colors.border,
@@ -659,20 +712,34 @@ const s = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.lg, marginBottom: spacing.md,
   },
-  driverName: { fontSize: 15, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md },
+  cardNotSubmitted: {
+    borderLeftColor: colors.textMuted,
+    opacity: 0.6,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  driverName: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
   flyBadge: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  notSubmitted: { ...typography.labelSm, color: colors.textMuted, letterSpacing: 1 },
+  amended: { ...typography.labelSm, color: colors.warning, letterSpacing: 1 },
   daysRow: { flexDirection: 'row', gap: radius.sm },
   dayChip: {
-    width: 34, height: 34, borderRadius: radius.sm,
+    flex: 1, minHeight: 42, borderRadius: radius.sm,
     backgroundColor: colors.surfaceElevated,
     justifyContent: 'center', alignItems: 'center',
     borderWidth: 1, borderColor: colors.borderLight,
+    paddingVertical: spacing.xs,
   },
   dayAvail: { backgroundColor: colors.successDim, borderColor: colors.success },
   dayUnavail: { backgroundColor: colors.errorDim, borderColor: colors.borderLight },
   dayLabel: { fontSize: 10, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5 },
   dayLabelAvail: { color: colors.success },
   dayLabelUnavail: { color: colors.textMuted },
+  doneByText: { fontSize: 8, color: colors.textTertiary, marginTop: 1 },
 
   empty: { ...typography.bodySm, color: colors.textTertiary, textAlign: 'center', marginTop: spacing.sm },
   errorText: { color: colors.textTertiary, fontSize: 14, marginBottom: spacing.lg },
