@@ -395,13 +395,12 @@ export default function App() {
             const taskExists = await TaskMgr.isTaskRegisteredAsync('dealership-geofence-task');
             if (!taskExists && geofenceStartedRef.current) {
               console.log("[Geofence] Task unregistered, re-registering");
-              const restartResult = await GeofenceManager.start();
-              const restartOk = restartResult?.success ?? restartResult;
+              const restarted = await GeofenceManager.start();
               logEvent(
-                restartOk ? 'info' : 'warn',
+                restarted ? 'info' : 'warn',
                 'geofence_re_registered',
-                `Geofence re-registration ${restartOk ? 'succeeded' : 'failed'} after foreground resume${restartResult?.reason ? ` — ${restartResult.reason}` : ''}`,
-                { device_os: Platform.OS, reason: restartResult?.reason }
+                `Geofence re-registration ${restarted ? 'succeeded' : 'failed'} after foreground resume`,
+                { device_os: Platform.OS }
               );
             }
           }
