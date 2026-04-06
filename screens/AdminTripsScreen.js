@@ -28,6 +28,25 @@ const STATUS_COLORS = {
   finalized: colors.textTertiary,
 };
 
+// Trip type display helpers
+const TRIP_TYPE_LABELS = {
+  fly: '✈ Fly',
+  drive: '🚗 Drive',
+  aa: '🚐 AA',
+  courier: '📦 Courier',
+  airport: '🛫 Airport',
+};
+const TRIP_TYPE_LABELS_UPPER = {
+  fly: '✈ FLY',
+  drive: '🚗 DRIVE',
+  aa: '🚐 AA',
+  courier: '📦 COURIER',
+  airport: '🛫 AIRPORT',
+};
+function tripTypeLabel(type, upper) {
+  return upper ? (TRIP_TYPE_LABELS_UPPER[type] || type) : (TRIP_TYPE_LABELS[type] || type);
+}
+
 // Fire-and-forget: notify driver(s) of new trip assignment
 function notifyTripAssigned(tripId, driverIds, city, scheduledPickup) {
   const ids = driverIds.filter(Boolean);
@@ -57,6 +76,8 @@ export default function AdminTripsScreen({ session, userRole }) {
   const [unreadCounts, setUnreadCounts] = useState({});
   const [chatTrip, setChatTrip] = useState(null);
   const [availability, setAvailability] = useState([]);
+  const [expandedGroups, setExpandedGroups] = useState({});
+  const [showAAFinalizeModal, setShowAAFinalizeModal] = useState(null); // array of group trips
 
   // Load trips + profiles
   useEffect(() => {
@@ -252,29 +273,153 @@ export default function AdminTripsScreen({ session, userRole }) {
         }
       >
         <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
-        {displayedTrips.map((trip) => (
-          <TripCard
-            key={trip.id}
-            trip={trip}
-            allProfiles={allProfiles}
-            unreadCount={unreadCounts[trip.id] || 0}
-            isTablet={isTablet}
-            onPress={() => {
-              if (isReadOnly) return;
-              setSelectedTrip(trip);
-              if (trip.status === 'completed') {
-                setShowFinalizeModal(true);
-              } else if (trip.status === 'finalized') {
-                setShowReassignModal(true);
-              } else if (trip.status === 'pending' || trip.status === 'in_progress') {
-                setShowReassignModal(true);
-              }
-            }}
-            onChatPress={(t) => setChatTrip(t)}
-            onDelete={isReadOnly ? null : handleDeleteTrip}
-            isReadOnly={isReadOnly}
-          />
-        ))}
+        {(() => {
+          // Group AA trips by group_id
+          const items = [];
+          const seenGroups = new Set();
+          for (const trip of displayedTrips) {
+            if (trip.trip_type === 'aa' && trip.group_id) {
+              if (seenGroups.has(trip.group_id)) continue;
+              seenGroups.add(trip.group_id);
+              const groupTrips = displayedTrips.filter((t) => t.group_id === trip.group_id);
+              items.push({ type: 'aa_group', group_id: trip.group_id, trips: groupTrips });
+            } else {
+              items.push({ type: 'trip', trip });
+            }
+          }
+          return items.map((item) => {
+            if (item.type === 'aa_group') {
+              const { group_id, trips: groupTrips } = item;
+              const expanded = expandedGroups[group_id];
+              const label = aaGroupLabel(groupTrips[0]);
+              const driverNames = groupTrips.map((t) => {
+                const p = allProfiles.find((pr) => pr.id === t.driver_id);
+                return p?.name || '—';
+              }).join(', ');
+              const statuses = groupTrips.map((t) => t.status);
+              const anyCompleted = statuses.includes('completed');
+              const allFinalized = statuses.every((st) => st === 'finalized');
+              const groupStatus = allFinalized ? 'finalized' : anyCompleted ? 'completed' : statuses.includes('in_progress') ? 'in_progress' : 'pending';
+              const statusColor = STATUS_COLORS[groupStatus] || colors.textTertiary;
+
+              return (
+                <View key={group_id} style={[s.card, isTablet && { width: '48.5%' }]}>
+                  {/* AA Group Header */}
+                  <TouchableOpacity
+                    style={s.cardTop}
+                    onPress={() => setExpandedGroups((prev) => ({ ...prev, [group_id]: !prev[group_id] }))}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[s.statusBadge, { borderColor: statusColor, backgroundColor: `${statusColor}15` }]}>
+                      <Text style={[s.statusText, { color: statusColor }]}>
+                        {groupStatus === 'in_progress' ? 'IN PROGRESS' : groupStatus.toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={s.crmId}>{expanded ? '▼' : '▶'}</Text>
+                    <Text style={s.tripType}>🚐 AA</Text>
+                  </TouchableOpacity>
+
+                  <View style={s.cardMain}>
+                    <View style={s.cardLeft}>
+                      <Text style={s.cityText}>{label} — {groupTrips[0]?.city}</Text>
+                      <Text style={s.pickupText}>{groupTrips.length} drivers · {driverNames}</Text>
+                    </View>
+                  </View>
+
+                  {/* Stock Numbers */}
+                  {groupTrips[0]?.stock_numbers ? (
+                    <Text style={s.notesText}>Stock: {groupTrips[0].stock_numbers}</Text>
+                  ) : null}
+
+                  {/* Finalize Group button */}
+                  {!isReadOnly && anyCompleted && !allFinalized && (
+                    <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 }}>
+                      <TouchableOpacity
+                        style={{ backgroundColor: 'rgba(74,232,133,0.1)', borderWidth: 1, borderColor: colors.success, borderRadius: 8, padding: 10, alignItems: 'center' }}
+                        onPress={() => setShowAAFinalizeModal(groupTrips)}
+                      >
+                        <Text style={{ color: colors.success, fontWeight: '700', fontSize: 13 }}>Finalize Group</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Expanded: individual driver cards */}
+                  {expanded && groupTrips.map((trip) => {
+                    const driver = allProfiles.find((p) => p.id === trip.driver_id);
+                    const tripStatusColor = STATUS_COLORS[trip.status] || colors.textTertiary;
+                    return (
+                      <View key={trip.id} style={{
+                        marginHorizontal: 12,
+                        marginBottom: 8,
+                        padding: 10,
+                        backgroundColor: colors.surface,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderLeftWidth: 3,
+                        borderLeftColor: tripStatusColor,
+                        borderRadius: 6,
+                      }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={{ fontWeight: '700', color: colors.textPrimary, fontSize: 13 }}>{driver?.name || '—'}</Text>
+                          <View style={[s.statusBadge, { borderColor: tripStatusColor, backgroundColor: `${tripStatusColor}15` }]}>
+                            <Text style={[s.statusText, { color: tripStatusColor }]}>
+                              {trip.status === 'in_progress' ? 'IN PROGRESS' : trip.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+                        {trip.actual_start && (
+                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 4 }}>
+                            Started {new Date(trip.actual_start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                            {trip.actual_end ? ` · Ended ${new Date(trip.actual_end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}
+                          </Text>
+                        )}
+                        {/* Individual finalize */}
+                        {!isReadOnly && trip.status === 'completed' && (
+                          <TouchableOpacity
+                            style={{ marginTop: 8, backgroundColor: 'rgba(74,232,133,0.1)', borderWidth: 1, borderColor: colors.success, borderRadius: 6, padding: 6, alignItems: 'center' }}
+                            onPress={() => {
+                              setSelectedTrip(trip);
+                              setShowFinalizeModal(true);
+                            }}
+                          >
+                            <Text style={{ color: colors.success, fontWeight: '700', fontSize: 11 }}>Finalize</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })}
+                  {expanded && <View style={{ height: 8 }} />}
+                </View>
+              );
+            }
+
+            // Regular trip card
+            const trip = item.trip;
+            return (
+              <TripCard
+                key={trip.id}
+                trip={trip}
+                allProfiles={allProfiles}
+                unreadCount={unreadCounts[trip.id] || 0}
+                isTablet={isTablet}
+                onPress={() => {
+                  if (isReadOnly) return;
+                  setSelectedTrip(trip);
+                  if (trip.status === 'completed') {
+                    setShowFinalizeModal(true);
+                  } else if (trip.status === 'finalized') {
+                    setShowReassignModal(true);
+                  } else if (trip.status === 'pending' || trip.status === 'in_progress') {
+                    setShowReassignModal(true);
+                  }
+                }}
+                onChatPress={(t) => setChatTrip(t)}
+                onDelete={isReadOnly ? null : handleDeleteTrip}
+                isReadOnly={isReadOnly}
+              />
+            );
+          });
+        })()}
         </View>
 
         {displayedTrips.length === 0 && (
@@ -313,6 +458,26 @@ export default function AdminTripsScreen({ session, userRole }) {
             setTrips(trips.map((t) => (t.id === updatedTrip.id ? updatedTrip : t)));
             setShowFinalizeModal(false);
             setSelectedTrip(null);
+          }}
+        />
+      )}
+
+      {/* AA Group Finalize Modal */}
+      {showAAFinalizeModal && (
+        <AAGroupFinalizeModal
+          groupTrips={showAAFinalizeModal}
+          allProfiles={allProfiles}
+          onClose={() => setShowAAFinalizeModal(null)}
+          onFinalized={(updatedTrip) => {
+            setTrips(trips.map((t) => (t.id === updatedTrip.id ? updatedTrip : t)));
+            // Close when all in group are finalized
+            const remaining = showAAFinalizeModal.filter(
+              (t) => t.id !== updatedTrip.id && t.status !== 'finalized',
+            );
+            if (remaining.length === 0) setShowAAFinalizeModal(null);
+            else setShowAAFinalizeModal((prev) =>
+              prev.map((t) => (t.id === updatedTrip.id ? { ...t, status: 'finalized' } : t)),
+            );
           }}
         />
       )}
@@ -371,7 +536,7 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPre
         </View>
         <Text style={s.crmId}>{trip.crm_id || '—'}</Text>
         <Text style={s.tripType}>
-          {trip.trip_type === 'fly' ? '✈ FLY' : '🚗 DRIVE'}
+          {tripTypeLabel(trip.trip_type, true)}
         </Text>
       </View>
 
@@ -503,18 +668,250 @@ function DriverWarnings({ warnings }) {
 }
 
 // ── CREATE TRIP VIEW ───────────────────────────────────────────────────────────────────────────────
+// ── AA GROUP LABEL HELPER ──
+function aaGroupLabel(trip) {
+  const d = trip.scheduled_pickup ? new Date(trip.scheduled_pickup) : new Date();
+  return `AA ${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// ── AA GROUP FINALIZE MODAL (MOBILE) ─────────────────────────────────────────
+function AAGroupFinalizeModal({ groupTrips, allProfiles, onClose, onFinalized }) {
+  const [driverForms, setDriverForms] = useState(() =>
+    groupTrips.map((trip) => ({
+      tripId: trip.id,
+      driverId: trip.driver_id,
+      pay: '45',
+      hours: trip.actual_start && trip.actual_end
+        ? ((new Date(trip.actual_end) - new Date(trip.actual_start)) / 3600000).toFixed(1)
+        : '',
+      miles: String(trip.miles ?? ''),
+    })),
+  );
+  const [stockNumbers, setStockNumbers] = useState(groupTrips[0]?.stock_numbers || '');
+  const [fuelCost, setFuelCost] = useState('');
+  const [otherCost, setOtherCost] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function setDriverField(idx, key, value) {
+    setDriverForms((prev) => prev.map((f, i) => (i === idx ? { ...f, [key]: value } : f)));
+  }
+
+  const totalPay = driverForms.reduce((sum, f) => sum + (Number(f.pay) || 0), 0);
+  const computedActualCost = totalPay + (Number(fuelCost) || 0) + (Number(otherCost) || 0);
+
+  async function finalizeTrip(df) {
+    const trip = groupTrips.find((t) => t.id === df.tripId);
+    const costFields = {
+      fuel_cost: fuelCost ? Number(fuelCost) : null,
+      other_cost: otherCost ? Number(otherCost) : null,
+    };
+    const driverCost = Number(df.pay) + (Number(fuelCost) || 0) + (Number(otherCost) || 0);
+
+    const { error: tripErr } = await supabase
+      .from('trips')
+      .update({
+        status: 'finalized',
+        pay: Number(df.pay),
+        miles: df.miles ? Number(df.miles) : 0,
+        hours: df.hours ? Number(df.hours) : 0,
+        stock_numbers: stockNumbers || null,
+        actual_cost: driverCost,
+        estimated_cost: 0,
+        ...costFields,
+      })
+      .eq('id', df.tripId);
+
+    if (tripErr) return tripErr.message;
+
+    const { error: entryErr } = await supabase.from('entries').insert({
+      driver_id: df.driverId,
+      trip_id: df.tripId,
+      date: (trip.actual_end ? new Date(trip.actual_end) : new Date()).toISOString().slice(0, 10),
+      pay: Number(df.pay),
+      hours: df.hours ? Number(df.hours) : 0,
+      miles: df.miles ? Number(df.miles) : 0,
+      city: trip.city,
+      crm_id: trip.crm_id,
+      carpage_link: trip.carpage_link,
+      actual_cost: driverCost,
+      estimated_cost: 0,
+      trip_type: 'aa',
+      stock_numbers: stockNumbers || null,
+      ...costFields,
+    });
+
+    if (entryErr) return entryErr.message;
+    return null;
+  }
+
+  async function handleFinalizeDriver(idx) {
+    const df = driverForms[idx];
+    if (!df.pay) { setError('Pay is required'); return; }
+    setSaving(true);
+    setError('');
+    const err = await finalizeTrip(df);
+    setSaving(false);
+    if (err) { setError(err); return; }
+    onFinalized({ ...groupTrips.find((t) => t.id === df.tripId), status: 'finalized' });
+  }
+
+  async function handleFinalizeAll() {
+    const missing = driverForms.find((f) => !f.pay);
+    if (missing) {
+      const driver = allProfiles.find((p) => p.id === missing.driverId);
+      setError(`Pay required for ${driver?.name || 'all drivers'}`);
+      return;
+    }
+    setSaving(true);
+    setError('');
+    for (const df of driverForms) {
+      const trip = groupTrips.find((t) => t.id === df.tripId);
+      if (trip.status === 'finalized') continue;
+      const err = await finalizeTrip(df);
+      if (err) { setError(err); setSaving(false); return; }
+    }
+    setSaving(false);
+    groupTrips.forEach((t) => onFinalized({ ...t, status: 'finalized' }));
+  }
+
+  const label = aaGroupLabel(groupTrips[0]);
+  const allCompleted = groupTrips.every((t) => t.status === 'completed' || t.status === 'finalized');
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={s.modalOverlay}>
+        <View style={s.modalContainer}>
+          <Text style={s.modalTitle}>Finalize {label}</Text>
+          <Text style={s.modalSubtitle}>
+            {groupTrips[0]?.city} · {groupTrips.length} driver{groupTrips.length !== 1 ? 's' : ''}
+          </Text>
+
+          <ScrollView style={{ maxHeight: 500 }} keyboardShouldPersistTaps="handled">
+            {/* Editable stock numbers */}
+            <View style={s.modalField}>
+              <Text style={s.modalLabel}>Stock Numbers</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="A123, B456, C789"
+                placeholderTextColor={colors.textTertiary}
+                value={stockNumbers}
+                onChangeText={setStockNumbers}
+              />
+            </View>
+
+            {/* Per-driver pay */}
+            <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textTertiary, marginTop: 12, marginBottom: 8 }}>DRIVER PAY</Text>
+            {driverForms.map((df, idx) => {
+              const driver = allProfiles.find((p) => p.id === df.driverId);
+              const trip = groupTrips.find((t) => t.id === df.tripId);
+              const isFinalized = trip?.status === 'finalized';
+              return (
+                <View key={df.tripId} style={{
+                  padding: 12,
+                  backgroundColor: isFinalized ? 'rgba(74,232,133,0.05)' : colors.surface,
+                  borderWidth: 1,
+                  borderColor: isFinalized ? colors.success : colors.border,
+                  borderRadius: 8,
+                  marginBottom: 8,
+                  opacity: isFinalized ? 0.6 : 1,
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: isFinalized ? 0 : 8 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 13, color: colors.textPrimary }}>{driver?.name || '—'}</Text>
+                    {isFinalized ? (
+                      <Text style={{ fontSize: 11, color: colors.success, fontWeight: '700' }}>FINALIZED</Text>
+                    ) : (
+                      <TouchableOpacity
+                        style={{ backgroundColor: 'rgba(74,232,133,0.1)', borderWidth: 1, borderColor: colors.success, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 }}
+                        onPress={() => handleFinalizeDriver(idx)}
+                        disabled={saving}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.success }}>Finalize</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {!isFinalized && (
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Pay ($)</Text>
+                        <TextInput style={s.modalInput} value={df.pay} onChangeText={(v) => setDriverField(idx, 'pay', v)} keyboardType="decimal-pad" placeholder="45" placeholderTextColor={colors.textTertiary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Hours</Text>
+                        <TextInput style={s.modalInput} value={df.hours} onChangeText={(v) => setDriverField(idx, 'hours', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textTertiary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Miles</Text>
+                        <TextInput style={s.modalInput} value={df.miles} onChangeText={(v) => setDriverField(idx, 'miles', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textTertiary} />
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+
+            {/* Shared costs */}
+            <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textTertiary, marginTop: 12, marginBottom: 8 }}>SHARED COSTS</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <View style={s.modalField}>
+                  <Text style={s.modalLabel}>Fuel ($)</Text>
+                  <TextInput style={s.modalInput} value={fuelCost} onChangeText={setFuelCost} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textTertiary} />
+                </View>
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={s.modalField}>
+                  <Text style={s.modalLabel}>Other ($)</Text>
+                  <TextInput style={s.modalInput} value={otherCost} onChangeText={setOtherCost} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textTertiary} />
+                </View>
+              </View>
+            </View>
+            {/* Total */}
+            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textTertiary }}>Total (All Drivers + Costs)</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>${computedActualCost.toFixed(2)}</Text>
+            </View>
+          </ScrollView>
+
+          {error ? <Text style={s.modalError}>{error}</Text> : null}
+
+          <View style={s.modalActions}>
+            <TouchableOpacity style={s.modalBtnCancel} onPress={onClose}>
+              <Text style={s.modalBtnCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            {allCompleted && (
+              <TouchableOpacity
+                style={[s.modalBtnSave, saving && s.disabled]}
+                onPress={handleFinalizeAll}
+                disabled={saving}
+              >
+                <Text style={s.modalBtnSaveText}>
+                  {saving ? 'Saving...' : `Finalize All ${groupTrips.length} →`}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) {
   const now = new Date();
   const [form, setForm] = useState({
     driver_id: drivers[0]?.id || '',
     second_driver_id: '',
     designated_driver_id: '',
+    airport_driver_id: '',
     trip_type: 'fly',
     city: '',
     crm_id: '',
     carpage_link: '',
     scheduled_pickup: now,
     notes: '',
+    stock_numbers: '',
+    aa_driver_ids: [],
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -549,7 +946,17 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
   }
 
   async function handleCreate() {
-    if (!form.driver_id) {
+    // ── AA validation ──
+    if (form.trip_type === 'aa') {
+      if (!form.aa_driver_ids || form.aa_driver_ids.length === 0) {
+        setError('AA trips require at least one driver');
+        return;
+      }
+      if (!form.city) {
+        setError('Destination city is required for AA trips');
+        return;
+      }
+    } else if (!form.driver_id) {
       setError('Driver is required');
       return;
     }
@@ -557,9 +964,46 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
     setSaving(true);
     setError('');
 
+    // ── AA trip: one trip per driver, linked by group_id ──
+    if (form.trip_type === 'aa') {
+      const groupId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+      const payloads = form.aa_driver_ids.map((driverId) => ({
+        driver_id: driverId,
+        designated_driver_id: driverId,
+        trip_type: 'aa',
+        city: form.city,
+        crm_id: form.crm_id,
+        carpage_link: form.carpage_link || null,
+        scheduled_pickup: form.scheduled_pickup.toISOString(),
+        notes: form.notes || null,
+        status: 'pending',
+        group_id: groupId,
+        stock_numbers: form.stock_numbers || null,
+      }));
+
+      const { data, error: err } = await supabase
+        .from('trips')
+        .insert(payloads)
+        .select();
+
+      setSaving(false);
+      if (err) {
+        setError(err.message);
+        return;
+      }
+
+      notifyTripAssigned(data[0].id, form.aa_driver_ids, form.city, form.scheduled_pickup.toISOString());
+      data.forEach((t) => onCreated(t));
+      return;
+    }
+
+    // ── Standard trip (fly, drive, courier) ──
     const payload = {
       driver_id: form.driver_id,
-      second_driver_id: form.second_driver_id || null,
+      second_driver_id: form.trip_type === 'drive' ? (form.second_driver_id || null) : null,
       designated_driver_id: form.designated_driver_id || form.driver_id,
       trip_type: form.trip_type,
       city: form.city,
@@ -576,14 +1020,42 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
       .select()
       .single();
 
-    setSaving(false);
-
     if (err) {
+      setSaving(false);
       setError(err.message);
       return;
     }
 
-    notifyTripAssigned(data.id, [form.driver_id, form.second_driver_id], form.city, form.scheduled_pickup.toISOString());
+    // ── Airport driver: create linked trip for fly trips ──
+    if (form.trip_type === 'fly' && form.airport_driver_id) {
+      const airportPayload = {
+        driver_id: form.airport_driver_id,
+        designated_driver_id: form.airport_driver_id,
+        trip_type: 'airport',
+        city: form.city,
+        crm_id: form.crm_id,
+        carpage_link: form.carpage_link || null,
+        scheduled_pickup: form.scheduled_pickup.toISOString(),
+        notes: `Airport driver for ${form.city}`,
+        status: 'pending',
+        parent_trip_id: data.id,
+      };
+      const { data: airportData, error: airportErr } = await supabase
+        .from('trips')
+        .insert(airportPayload)
+        .select()
+        .single();
+      if (airportErr) {
+        setError('Trip created but airport driver failed: ' + airportErr.message);
+      } else if (airportData) {
+        onCreated(airportData);
+      }
+    }
+
+    setSaving(false);
+
+    const driverIds = [form.driver_id, form.second_driver_id, form.airport_driver_id].filter(Boolean);
+    notifyTripAssigned(data.id, driverIds, form.city, form.scheduled_pickup.toISOString());
     onCreated(data);
   }
 
@@ -610,62 +1082,87 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
       <View style={s.form}>
         <View style={s.field}>
           <Text style={s.label}>Trip Type</Text>
-          <View style={s.segmentControl}>
-            <TouchableOpacity
-              style={[
-                s.segment,
-                form.trip_type === 'fly' && s.segmentActive,
-              ]}
-              onPress={() => set('trip_type', 'fly')}
-            >
-              <Text
-                style={[
-                  s.segmentText,
-                  form.trip_type === 'fly' && s.segmentTextActive,
-                ]}
-              >
-                ✈ Fly
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                s.segment,
-                form.trip_type === 'drive' && s.segmentActive,
-              ]}
-              onPress={() => set('trip_type', 'drive')}
-            >
-              <Text
-                style={[
-                  s.segmentText,
-                  form.trip_type === 'drive' && s.segmentTextActive,
-                ]}
-              >
-                🚗 Drive
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={s.field}>
-          <Text style={s.label}>
-            {form.trip_type === 'drive' ? 'Driver 1 (Chase Car)' : 'Assigned Driver'}
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {drivers.map((d) => (
+          <View style={[s.segmentControl, { flexWrap: 'wrap' }]}>
+            {['fly', 'drive', 'aa', 'courier'].map((t) => (
               <TouchableOpacity
-                key={d.id}
-                style={[s.driverPill, form.driver_id === d.id && s.driverPillActive]}
-                onPress={() => set('driver_id', d.id)}
+                key={t}
+                style={[
+                  s.segment,
+                  form.trip_type === t && s.segmentActive,
+                ]}
+                onPress={() => set('trip_type', t)}
               >
-                <Text style={[s.driverPillText, form.driver_id === d.id && s.driverPillTextActive]}>
-                  {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                <Text
+                  style={[
+                    s.segmentText,
+                    form.trip_type === t && s.segmentTextActive,
+                  ]}
+                >
+                  {tripTypeLabel(t)}
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
-          <DriverWarnings warnings={getDriverWarnings(form.driver_id, form.scheduled_pickup, allTrips, availability, null)} />
+          </View>
         </View>
 
+        {/* ── AA: multi-driver selection ── */}
+        {form.trip_type === 'aa' && (
+          <View style={s.field}>
+            <Text style={s.label}>Drivers in Convoy (tap to select)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {drivers.map((d) => {
+                const selected = form.aa_driver_ids.includes(d.id);
+                return (
+                  <TouchableOpacity
+                    key={d.id}
+                    style={[s.driverPill, selected && s.driverPillActive]}
+                    onPress={() => {
+                      if (selected) {
+                        set('aa_driver_ids', form.aa_driver_ids.filter((id) => id !== d.id));
+                      } else {
+                        set('aa_driver_ids', [...form.aa_driver_ids, d.id]);
+                      }
+                    }}
+                  >
+                    <Text style={[s.driverPillText, selected && s.driverPillTextActive]}>
+                      {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {form.aa_driver_ids.length > 0 && (
+              <Text style={{ color: colors.textTertiary, fontSize: 11, marginTop: 4 }}>
+                {form.aa_driver_ids.length} driver{form.aa_driver_ids.length !== 1 ? 's' : ''} selected
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* ── Single driver for fly, drive, courier ── */}
+        {form.trip_type !== 'aa' && (
+          <View style={s.field}>
+            <Text style={s.label}>
+              {form.trip_type === 'drive' ? 'Driver 1 (Chase Car)' : 'Assigned Driver'}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {drivers.map((d) => (
+                <TouchableOpacity
+                  key={d.id}
+                  style={[s.driverPill, form.driver_id === d.id && s.driverPillActive]}
+                  onPress={() => set('driver_id', d.id)}
+                >
+                  <Text style={[s.driverPillText, form.driver_id === d.id && s.driverPillTextActive]}>
+                    {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <DriverWarnings warnings={getDriverWarnings(form.driver_id, form.scheduled_pickup, allTrips, availability, null)} />
+          </View>
+        )}
+
+        {/* ── Drive: second driver ── */}
         {form.trip_type === 'drive' && (
           <View style={s.field}>
             <Text style={s.label}>Driver 2 (Drives Vehicle Back)</Text>
@@ -693,6 +1190,50 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
                 ))}
             </ScrollView>
             {form.second_driver_id ? <DriverWarnings warnings={getDriverWarnings(form.second_driver_id, form.scheduled_pickup, allTrips, availability, null)} /> : null}
+          </View>
+        )}
+
+        {/* ── Fly: optional airport driver ── */}
+        {form.trip_type === 'fly' && (
+          <View style={s.field}>
+            <Text style={s.label}>Airport Driver (optional, $45 suggested)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[s.driverPill, form.airport_driver_id === '' && s.driverPillActive]}
+                onPress={() => set('airport_driver_id', '')}
+              >
+                <Text style={[s.driverPillText, form.airport_driver_id === '' && s.driverPillTextActive]}>
+                  — None —
+                </Text>
+              </TouchableOpacity>
+              {drivers
+                .filter((d) => d.id !== form.driver_id)
+                .map((d) => (
+                  <TouchableOpacity
+                    key={d.id}
+                    style={[s.driverPill, form.airport_driver_id === d.id && s.driverPillActive]}
+                    onPress={() => set('airport_driver_id', d.id)}
+                  >
+                    <Text style={[s.driverPillText, form.airport_driver_id === d.id && s.driverPillTextActive]}>
+                      {d.name}{d.willing_to_fly ? ' (F)' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── AA: stock numbers ── */}
+        {form.trip_type === 'aa' && (
+          <View style={s.field}>
+            <Text style={s.label}>Stock Numbers</Text>
+            <TextInput
+              style={s.input}
+              placeholder="A123, B456, C789"
+              placeholderTextColor={colors.textTertiary}
+              value={form.stock_numbers}
+              onChangeText={(text) => set('stock_numbers', text)}
+            />
           </View>
         )}
 
@@ -981,7 +1522,7 @@ function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, avai
                 <>
                   <View style={s.reassignRow}>
                     <Text style={s.reassignLabel}>TYPE</Text>
-                    <Text style={s.reassignValue}>{trip.trip_type === 'fly' ? 'Fly' : 'Drive'}</Text>
+                    <Text style={s.reassignValue}>{tripTypeLabel(trip.trip_type)}</Text>
                   </View>
                   {pickupTime && (
                     <View style={s.reassignRow}>
@@ -1102,13 +1643,20 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
       ? ((new Date(trip.actual_end) - new Date(trip.actual_start)) / 3600000).toFixed(1)
       : '';
 
+  // $45 suggested pay for AA, Courier, and Airport trips
+  const suggestedPay = ['aa', 'courier', 'airport'].includes(trip.trip_type) ? '45' : '';
+
   const [form, setForm] = useState({
-    pay: '',
+    pay: suggestedPay,
     pay2: '',
     hours: duration,
     miles: String(trip.miles || ''),
-    actual_cost: String(trip.actual_cost || ''),
     estimated_cost: String(trip.estimated_cost || ''),
+    flight_cost: String(trip.flight_cost || ''),
+    rideshare_cost: String(trip.rideshare_cost || ''),
+    fuel_cost: String(trip.fuel_cost || ''),
+    other_cost: String(trip.other_cost || ''),
+    stock_numbers: trip.stock_numbers ?? '',
     recon_missed: false,
   });
   const [saving, setSaving] = useState(false);
@@ -1117,6 +1665,12 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // Compute actual cost from itemized fields + driver pay
+  const computedActualCost = [
+    form.flight_cost, form.rideshare_cost, form.fuel_cost, form.other_cost,
+    form.pay, form.pay2,
+  ].reduce((sum, v) => sum + (Number(v) || 0), 0);
 
   async function handleFinalize() {
     if (!form.pay) {
@@ -1131,6 +1685,13 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
     setSaving(true);
     setError('');
 
+    const costFields = {
+      flight_cost: form.flight_cost ? Number(form.flight_cost) : null,
+      rideshare_cost: form.rideshare_cost ? Number(form.rideshare_cost) : null,
+      fuel_cost: form.fuel_cost ? Number(form.fuel_cost) : null,
+      other_cost: form.other_cost ? Number(form.other_cost) : null,
+    };
+
     // Update trip to finalized
     const { error: tripError } = await supabase
       .from('trips')
@@ -1140,9 +1701,11 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
         second_driver_pay: driver2 ? Number(form.pay2) : null,
         hours: Number(form.hours),
         miles: Number(form.miles),
-        actual_cost: Number(form.actual_cost),
+        actual_cost: computedActualCost,
         estimated_cost: Number(form.estimated_cost),
         recon_missed: form.recon_missed,
+        stock_numbers: form.stock_numbers || null,
+        ...costFields,
       })
       .eq('id', trip.id);
 
@@ -1152,38 +1715,32 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
       return;
     }
 
+    const baseEntry = {
+      trip_id: trip.id,
+      date: trip.actual_start ? trip.actual_start.split('T')[0] : new Date().toISOString().split('T')[0],
+      hours: Number(form.hours),
+      city: trip.city,
+      crm_id: trip.crm_id,
+      miles: Number(form.miles),
+      actual_cost: computedActualCost,
+      estimated_cost: Number(form.estimated_cost),
+      carpage_link: trip.carpage_link,
+      recon_missed: form.recon_missed,
+      trip_type: trip.trip_type,
+      stock_numbers: form.stock_numbers || null,
+      ...costFields,
+    };
+
     // Create entries for each driver
     const entries = [
-      {
-        driver_id: trip.driver_id,
-        trip_id: trip.id,
-        date: trip.actual_start ? trip.actual_start.split('T')[0] : new Date().toISOString().split('T')[0],
-        pay: Number(form.pay),
-        hours: Number(form.hours),
-        city: trip.city,
-        crm_id: trip.crm_id,
-        miles: Number(form.miles),
-        actual_cost: Number(form.actual_cost),
-        estimated_cost: Number(form.estimated_cost),
-        carpage_link: trip.carpage_link,
-        recon_missed: form.recon_missed,
-      },
+      { ...baseEntry, driver_id: trip.driver_id, pay: Number(form.pay) },
     ];
 
     if (driver2) {
       entries.push({
+        ...baseEntry,
         driver_id: trip.second_driver_id,
-        trip_id: trip.id,
-        date: trip.actual_start ? trip.actual_start.split('T')[0] : new Date().toISOString().split('T')[0],
         pay: Number(form.pay2),
-        hours: Number(form.hours),
-        city: trip.city,
-        crm_id: trip.crm_id,
-        miles: Number(form.miles),
-        actual_cost: Number(form.actual_cost),
-        estimated_cost: Number(form.estimated_cost),
-        carpage_link: trip.carpage_link,
-        recon_missed: form.recon_missed,
       });
     }
 
@@ -1203,9 +1760,10 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
       second_driver_pay: driver2 ? Number(form.pay2) : null,
       hours: Number(form.hours),
       miles: Number(form.miles),
-      actual_cost: Number(form.actual_cost),
+      actual_cost: computedActualCost,
       estimated_cost: Number(form.estimated_cost),
       recon_missed: form.recon_missed,
+      ...costFields,
     };
 
     onFinalized(updatedTrip);
@@ -1302,18 +1860,6 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
             </View>
 
             <View style={s.modalField}>
-              <Text style={s.modalLabel}>Actual Cost ($)</Text>
-              <TextInput
-                style={s.modalInput}
-                placeholder="0.00"
-                placeholderTextColor={colors.textTertiary}
-                keyboardType="decimal-pad"
-                value={form.actual_cost}
-                onChangeText={(text) => set('actual_cost', text)}
-              />
-            </View>
-
-            <View style={s.modalField}>
               <Text style={s.modalLabel}>Estimated Cost ($)</Text>
               <TextInput
                 style={s.modalInput}
@@ -1324,6 +1870,89 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
                 onChangeText={(text) => set('estimated_cost', text)}
               />
             </View>
+
+            {/* ── Itemized Cost Breakdown ── */}
+            <View style={{ marginTop: 12, padding: 12, backgroundColor: colors.surface, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: colors.textTertiary, marginBottom: 8 }}>COST BREAKDOWN</Text>
+
+              {(trip.trip_type === 'fly' || trip.trip_type === 'airport') && (
+                <>
+                  <View style={s.modalField}>
+                    <Text style={s.modalLabel}>Flight Ticket ($)</Text>
+                    <TextInput
+                      style={s.modalInput}
+                      placeholder="0.00"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="decimal-pad"
+                      value={form.flight_cost}
+                      onChangeText={(text) => set('flight_cost', text)}
+                    />
+                  </View>
+                  <View style={s.modalField}>
+                    <Text style={s.modalLabel}>Rideshare ($)</Text>
+                    <TextInput
+                      style={s.modalInput}
+                      placeholder="0.00"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="decimal-pad"
+                      value={form.rideshare_cost}
+                      onChangeText={(text) => set('rideshare_cost', text)}
+                    />
+                  </View>
+                </>
+              )}
+
+              <View style={s.modalField}>
+                <Text style={s.modalLabel}>Fuel ($)</Text>
+                <TextInput
+                  style={s.modalInput}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={form.fuel_cost}
+                  onChangeText={(text) => set('fuel_cost', text)}
+                />
+              </View>
+
+              <View style={s.modalField}>
+                <Text style={s.modalLabel}>Other Expenses ($)</Text>
+                <TextInput
+                  style={s.modalInput}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={form.other_cost}
+                  onChangeText={(text) => set('other_cost', text)}
+                />
+              </View>
+
+              <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textTertiary }}>Total Actual Cost</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>${computedActualCost.toFixed(2)}</Text>
+              </View>
+              {form.estimated_cost ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>Variance</Text>
+                  <Text style={{ fontSize: 11, color: computedActualCost > Number(form.estimated_cost) ? colors.error : colors.success }}>
+                    {computedActualCost > Number(form.estimated_cost) ? '+' : ''}${(computedActualCost - Number(form.estimated_cost)).toFixed(2)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* ── Stock Numbers (editable for AA trips) ── */}
+            {trip.trip_type === 'aa' && (
+              <View style={s.modalField}>
+                <Text style={s.modalLabel}>Stock Numbers</Text>
+                <TextInput
+                  style={s.modalInput}
+                  placeholder="A123, B456, C789"
+                  placeholderTextColor={colors.textTertiary}
+                  value={form.stock_numbers ?? trip.stock_numbers ?? ''}
+                  onChangeText={(text) => set('stock_numbers', text)}
+                />
+              </View>
+            )}
 
             <TouchableOpacity
               style={s.checkboxRow}

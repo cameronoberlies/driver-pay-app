@@ -200,18 +200,30 @@ export default function AllEntriesScreen() {
 
     setExporting(true);
     try {
-      const headers = ['Date', 'Driver', 'City', 'CRM ID', 'Hours', 'Miles', 'Drive Time (GPS)', 'Pay', 'Recon'];
+      const headers = [
+        'Date', 'Driver', 'City', 'Trip Type', 'CRM ID', 'Hours', 'Miles', 'Drive Time (GPS)',
+        'Pay', 'Flight Ticket', 'Rideshare', 'Fuel', 'Other', 'Actual Cost', 'Estimated Cost',
+        'Stock Numbers', 'Recon',
+      ];
       const rows = filtered.map(e => {
         const driver = profiles.find(p => p.id === e.driver_id);
         return [
           e.date,
           driver?.name ?? 'Unknown',
           e.city ?? '',
+          e.trip_type ?? '',
           e.crm_id ?? '',
           e.hours ?? '',
           e.miles ?? 0,
           e.drive_time ?? '',
           Number(e.pay || 0).toFixed(2),
+          e.flight_cost ?? '',
+          e.rideshare_cost ?? '',
+          e.fuel_cost ?? '',
+          e.other_cost ?? '',
+          e.actual_cost ?? '',
+          e.estimated_cost ?? '',
+          e.stock_numbers ?? '',
           e.recon_missed ? 'MISSED' : 'OK',
         ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
       });

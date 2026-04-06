@@ -229,9 +229,8 @@ function statusLabel(status) {
   return status.toUpperCase();
 }
 
-function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, activeTrip, unreadCount, onChatPress }) {
+function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, activeTrip, linkedInfo, unreadCount, onChatPress }) {
   const isDesignated = trip.designated_driver_id === currentUserId;
-  const isFlyTrip = trip.trip_type === 'fly';
   const isActive = activeTrip?.id === trip.id;
   const isPaused = isActive && activeTrip.paused;
 
@@ -255,7 +254,7 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, acti
       </View>
 
       <View style={s.cardMeta}>
-        <Text style={s.metaItem}>{isFlyTrip ? '✈ FLY' : '🚗 DRIVE'}</Text>
+        <Text style={s.metaItem}>{{ fly: '✈ FLY', drive: '🚗 DRIVE', aa: '🚐 AA', courier: '📦 COURIER', airport: '🛫 AIRPORT' }[trip.trip_type] || trip.trip_type}</Text>
         {trip.scheduled_pickup && (
           <Text style={s.metaItem}>
             {new Date(trip.scheduled_pickup).toLocaleDateString('en-US', {
@@ -266,6 +265,14 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, acti
       </View>
 
       {trip.notes ? <Text style={s.notes}>{trip.notes}</Text> : null}
+
+      {linkedInfo && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 }}>
+          <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>
+            {linkedInfo.label}: <Text style={{ color: colors.textPrimary, fontWeight: '600' }}>{linkedInfo.name}</Text>
+          </Text>
+        </View>
+      )}
 
       {isActive && !isPaused && (
         <View style={[s.liveRow, activeTrip.stale && s.liveRowStale]}>
@@ -349,6 +356,7 @@ export default function MyTripsScreen({ session, navigation }) {
   const [error, setError] = useState(false);
   const [activeTrip, setActiveTrip] = useState(null);
   const [unreadCounts, setUnreadCounts] = useState({});
+  const [linkedDriverNames, setLinkedDriverNames] = useState({}); // tripId -> name
 
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
@@ -401,6 +409,40 @@ export default function MyTripsScreen({ session, navigation }) {
       );
       if (err) throw err;
       setTrips(data ?? []);
+
+      // Resolve linked driver names (airport ↔ flyer)
+      const linkedNames = {};
+      const tripsData = data ?? [];
+      for (const t of tripsData) {
+        // Airport driver → show who they're driving
+        if (t.trip_type === 'airport' && t.parent_trip_id) {
+          const parent = tripsData.find((p) => p.id === t.parent_trip_id);
+          if (parent) {
+            const { data: prof } = await supabase.from('profiles').select('name').eq('id', parent.driver_id).single();
+            if (prof) linkedNames[t.id] = { label: 'Driving to airport', name: prof.name };
+          } else {
+            const { data: parentTrip } = await supabase.from('trips').select('driver_id').eq('id', t.parent_trip_id).single();
+            if (parentTrip) {
+              const { data: prof } = await supabase.from('profiles').select('name').eq('id', parentTrip.driver_id).single();
+              if (prof) linkedNames[t.id] = { label: 'Driving to airport', name: prof.name };
+            }
+          }
+        }
+        // Flyer → check if there's an airport driver linked
+        if (t.trip_type === 'fly') {
+          const { data: airportTrips } = await supabase
+            .from('trips')
+            .select('driver_id')
+            .eq('parent_trip_id', t.id)
+            .eq('trip_type', 'airport')
+            .limit(1);
+          if (airportTrips && airportTrips.length > 0) {
+            const { data: prof } = await supabase.from('profiles').select('name').eq('id', airportTrips[0].driver_id).single();
+            if (prof) linkedNames[t.id] = { label: 'Airport driver', name: prof.name };
+          }
+        }
+      }
+      setLinkedDriverNames(linkedNames);
 
       // Rehydrate activeTrip if there's an in_progress trip
       const inProgress = (data ?? []).find(
@@ -590,7 +632,7 @@ export default function MyTripsScreen({ session, navigation }) {
     // (below) takes over if iOS kills the JS runtime.
     if (locationWatcherRef.current) locationWatcherRef.current.remove();
     locationWatcherRef.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 10 },
+      { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 10000, distanceInterval: 10 },
       async (loc) => {
         const { latitude, longitude, speed: rawSpeed } = loc.coords;
 
@@ -696,7 +738,7 @@ export default function MyTripsScreen({ session, navigation }) {
 
     // Background task — survives iOS runtime kills
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-      accuracy: Location.Accuracy.High,
+      accuracy: Location.Accuracy.BestForNavigation,
       activityType: Location.ActivityType.AutomotiveNavigation,
       timeInterval: 10000,
       distanceInterval: 50,
@@ -789,7 +831,7 @@ export default function MyTripsScreen({ session, navigation }) {
     // Restart foreground watcher
     if (locationWatcherRef.current) locationWatcherRef.current.remove();
     locationWatcherRef.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.High, timeInterval: 10000, distanceInterval: 10 },
+      { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 10000, distanceInterval: 10 },
       async (loc) => {
         const { latitude, longitude, speed: rawSpeed } = loc.coords;
         await supabase.from('driver_locations').upsert({
@@ -866,7 +908,7 @@ export default function MyTripsScreen({ session, navigation }) {
 
     // Restart background task
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-      accuracy: Location.Accuracy.High,
+      accuracy: Location.Accuracy.BestForNavigation,
       activityType: Location.ActivityType.AutomotiveNavigation,
       timeInterval: 10000,
       distanceInterval: 50,
@@ -1032,6 +1074,7 @@ export default function MyTripsScreen({ session, navigation }) {
               onPause={handlePause}
               onResume={handleResume}
               activeTrip={activeTrip}
+              linkedInfo={linkedDriverNames[trip.id]}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
                 navigation.navigate('TripChat', {
@@ -1058,6 +1101,7 @@ export default function MyTripsScreen({ session, navigation }) {
               onPause={handlePause}
               onResume={handleResume}
               activeTrip={activeTrip}
+              linkedInfo={linkedDriverNames[trip.id]}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
                 navigation.navigate('TripChat', {
