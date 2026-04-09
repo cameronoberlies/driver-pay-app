@@ -543,7 +543,7 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPre
       {/* Main Info Row */}
       <View style={s.cardMain}>
         <View style={s.cardLeft}>
-          <Text style={s.cityText}>{trip.city}</Text>
+          <Text style={s.cityText}>{trip.trip_type === 'airport' ? `Airport Drop-off · ${trip.city}` : trip.city}</Text>
           {pickupDate && (
             <Text style={s.pickupText}>
               {pickupDate} at {pickupTime}

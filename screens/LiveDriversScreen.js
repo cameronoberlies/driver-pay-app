@@ -125,10 +125,20 @@ export default function LiveDriversScreen() {
       });
 
       var ageLabel = age < 60000 ? Math.round(age/1000) + 's ago' : age < 3600000 ? Math.round(age/60000) + 'm ago' : Math.round(age/3600000) + 'h ago';
+
+      // Distance from dealership
+      var dLat = (loc.latitude - 35.270367) * Math.PI / 180;
+      var dLon = (loc.longitude - (-81.496247)) * Math.PI / 180;
+      var a2 = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(35.270367 * Math.PI / 180) * Math.cos(loc.latitude * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      var distMi = 3958.8 * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2));
+      var etaHrs = distMi / 60;
+      var etaLabel = distMi < 5 ? 'At the dealership' : etaHrs < 1 ? '~' + Math.round(distMi) + ' mi out, ~' + Math.round(etaHrs * 60) + ' min' : '~' + Math.round(distMi) + ' mi out, ~' + etaHrs.toFixed(1) + ' hrs';
+
       var popupContent = '<div style="font-size:13px;font-weight:800;color:#fff;">' + (loc.name || 'Unknown') + '</div>' +
         '<div style="font-size:10px;color:#6b7585;">LAST UPDATE</div>' +
         '<div style="font-size:12px;font-weight:600;color:' + color + ';">' + ageLabel + '</div>' +
-        stopInfo;
+        stopInfo +
+        '<div style="font-size:11px;color:#f5a623;font-weight:600;margin-top:4px;">' + etaLabel + '</div>';
 
       if (markers[loc.driver_id]) {
         markers[loc.driver_id].setLatLng([loc.latitude, loc.longitude]);
@@ -206,9 +216,8 @@ export default function LiveDriversScreen() {
           source={{ html: mapHtml }}
           style={s.map}
           onLoad={() => {
-            if (webviewRef.current && locations.length > 0) {
-              webviewRef.current.postMessage(JSON.stringify(locations));
-            }
+            // Re-send enriched data once WebView is ready
+            load();
           }}
           javaScriptEnabled
           domStorageEnabled

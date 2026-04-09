@@ -437,6 +437,30 @@ export default function App() {
             console.log('[Wake] Failed:', e.message);
           }
         }
+
+        // Handle remote OTA update push
+        if (data?.type === 'check_for_update') {
+          try {
+            if (__DEV__) return; // Skip in dev mode
+            const update = await Updates.checkForUpdateAsync();
+            if (update.isAvailable) {
+              await Updates.fetchUpdateAsync();
+              console.log('[OTA] Update downloaded');
+
+              // Only force-reload if no active trip
+              const AsyncStorageOTA = require('@react-native-async-storage/async-storage').default;
+              const activeTrip = await AsyncStorageOTA.getItem('activeTrip');
+              if (!activeTrip) {
+                console.log('[OTA] No active trip — reloading app');
+                await Updates.reloadAsync();
+              } else {
+                console.log('[OTA] Active trip — update will apply on next restart');
+              }
+            }
+          } catch (e) {
+            console.log('[OTA] Update check failed:', e.message);
+          }
+        }
       });
 
     responseListener.current =
