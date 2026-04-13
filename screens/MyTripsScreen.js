@@ -1,9 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator, Alert, RefreshControl, AppState,
+  View, Text, StyleSheet, ScrollView, TextInput,
+  TouchableOpacity, ActivityIndicator, Alert, RefreshControl, AppState, Linking,
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+
+// Base64 to ArrayBuffer decoder for Supabase storage uploads
+function decode(base64) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const lookup = new Uint8Array(256);
+  for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
+  const len = base64.length;
+  let bufferLength = len * 0.75;
+  if (base64[len - 1] === '=') bufferLength--;
+  if (base64[len - 2] === '=') bufferLength--;
+  const arraybuffer = new ArrayBuffer(bufferLength);
+  const bytes = new Uint8Array(arraybuffer);
+  let p = 0;
+  for (let i = 0; i < len; i += 4) {
+    const e1 = lookup[base64.charCodeAt(i)];
+    const e2 = lookup[base64.charCodeAt(i + 1)];
+    const e3 = lookup[base64.charCodeAt(i + 2)];
+    const e4 = lookup[base64.charCodeAt(i + 3)];
+    bytes[p++] = (e1 << 2) | (e2 >> 4);
+    bytes[p++] = ((e2 & 15) << 4) | (e3 >> 2);
+    bytes[p++] = ((e3 & 3) << 6) | e4;
+  }
+  return arraybuffer;
+}
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
 import { getDistanceMiles, formatDuration } from '../lib/utils';
@@ -152,8 +178,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
                 Math.sin(dLon/2) * Math.sin(dLon/2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       const distance = R * c;
-      // Ignore jumps over 5 miles in a single update — GPS teleport from tracking gap
-      if (distance < 5) newMiles += distance;
+      newMiles += distance;
     }
 
     // Speed tracking (rawSpeed is m/s, convert to mph)
@@ -285,7 +310,12 @@ function statusLabel(status) {
   return status.toUpperCase();
 }
 
-function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, activeTrip, linkedInfo, unreadCount, onChatPress }) {
+function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, activeTrip, linkedInfo, unreadCount, onChatPress, onMileageSubmit, onPhotoUpload }) {
+  const [showMileageInput, setShowMileageInput] = useState(false);
+  const [vehicleMileage, setVehicleMileage] = useState('');
+  const [mileageSaving, setMileageSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoCount, setPhotoCount] = useState(trip._photoCount || 0);
   const isDesignated = trip.designated_driver_id === currentUserId;
   const isActive = activeTrip?.id === trip.id;
   const isPaused = isActive && activeTrip.paused;
@@ -295,43 +325,53 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, acti
   const canResume = isDesignated && trip.status === 'in_progress' && isActive && isPaused;
   const waitingForDesignated = !isDesignated && trip.trip_type === 'drive' && trip.status === 'pending';
 
+  const px = 20; // consistent horizontal padding
+
   return (
-    <View style={[s.card, { borderLeftColor: statusColor(trip.status) }]}>
-      <View style={s.cardHeader}>
-        <View style={s.cardHeaderLeft}>
-          <Text style={s.cardCrm}>{trip.carpage_id ?? trip.crm_id ?? '—'}</Text>
-          <Text style={s.cardCity}>{trip.trip_type === 'airport' ? `Airport Drop-off · ${trip.city}` : trip.city}</Text>
+    <View style={[s.card, { borderLeftColor: statusColor(trip.status), borderLeftWidth: 4, paddingVertical: 20, paddingHorizontal: 0 }]}>
+      {/* ── Header ── */}
+      <View style={{ paddingHorizontal: px, marginBottom: 16 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, color: colors.textTertiary, fontWeight: '600', fontFamily: 'monospace', marginBottom: 2 }}>{trip.carpage_id ?? trip.crm_id ?? '—'}</Text>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: colors.textPrimary, letterSpacing: 0.5 }}>{trip.trip_type === 'airport' ? `Airport Drop-off` : trip.city}</Text>
+            {trip.trip_type === 'airport' && <Text style={{ fontSize: 14, color: colors.textTertiary, marginTop: 2 }}>{trip.city}</Text>}
+          </View>
+          <View style={[s.statusBadge, { borderColor: statusColor(trip.status) }]}>
+            <Text style={[s.statusText, { color: statusColor(trip.status) }]}>
+              {statusLabel(trip.status)}
+            </Text>
+          </View>
         </View>
-        <View style={[s.statusBadge, { borderColor: statusColor(trip.status) }]}>
-          <Text style={[s.statusText, { color: statusColor(trip.status) }]}>
-            {statusLabel(trip.status)}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 }}>
+          <Text style={{ fontSize: 12, color: colors.textTertiary }}>{{ fly: '✈ FLY', drive: '🚗 DRIVE', aa: '🚐 AA', courier: '📦 COURIER', airport: '🛫 AIRPORT' }[trip.trip_type] || trip.trip_type}</Text>
+          {trip.scheduled_pickup && (
+            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+              {new Date(trip.scheduled_pickup).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </Text>
+          )}
         </View>
       </View>
 
-      <View style={s.cardMeta}>
-        <Text style={s.metaItem}>{{ fly: '✈ FLY', drive: '🚗 DRIVE', aa: '🚐 AA', courier: '📦 COURIER', airport: '🛫 AIRPORT' }[trip.trip_type] || trip.trip_type}</Text>
-        {trip.scheduled_pickup && (
-          <Text style={s.metaItem}>
-            {new Date(trip.scheduled_pickup).toLocaleDateString('en-US', {
-              month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-            })}
-          </Text>
-        )}
-      </View>
+      {/* ── Notes ── */}
+      {trip.notes && (
+        <View style={{ marginHorizontal: px, marginBottom: 16, padding: 14, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: colors.border, borderRadius: 12 }}>
+          <Text style={{ fontSize: 13, color: colors.textTertiary, lineHeight: 20 }}>{trip.notes}</Text>
+        </View>
+      )}
 
-      {trip.notes ? <Text style={s.notes}>{trip.notes}</Text> : null}
-
+      {/* ── Linked driver ── */}
       {linkedInfo && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 }}>
-          <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>
+        <View style={{ marginHorizontal: px, marginBottom: 16, padding: 12, backgroundColor: 'rgba(245,166,35,0.06)', borderWidth: 1, borderColor: 'rgba(245,166,35,0.15)', borderRadius: 10 }}>
+          <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '700' }}>
             {linkedInfo.label}: <Text style={{ color: colors.textPrimary, fontWeight: '600' }}>{linkedInfo.name}</Text>
           </Text>
         </View>
       )}
 
+      {/* ── Tracking status ── */}
       {isActive && !isPaused && (
-        <View style={[s.liveRow, activeTrip.stale && s.liveRowStale]}>
+        <View style={[s.liveRow, { marginHorizontal: px, marginBottom: 20, borderRadius: 10, paddingVertical: 14 }, activeTrip.stale && s.liveRowStale]}>
           <View style={[s.liveDot, activeTrip.stale && s.liveDotStale]} />
           <Text style={[s.liveText, activeTrip.stale && s.liveTextStale]}>
             {activeTrip.stale ? 'RECONNECTING...' : 'TRACKING'}
@@ -341,65 +381,163 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, acti
       )}
 
       {isPaused && (
-        <View style={s.pausedRow}>
+        <View style={[s.pausedRow, { marginHorizontal: px, marginBottom: 20, borderRadius: 10, paddingVertical: 14 }]}>
           <Text style={s.pausedIcon}>⏸</Text>
           <Text style={s.pausedText}>PAUSED</Text>
           <Text style={s.liveMiles}>{(activeTrip.miles ?? 0).toFixed(1)} mi  ·  {formatDuration(activeTrip.elapsed ?? 0)}</Text>
         </View>
       )}
 
-      {canStart && (
-        <TouchableOpacity style={s.startBtn} onPress={() => onStart(trip)}>
-          <Text style={s.startBtnText}>▶ START TRIP</Text>
+      {/* ── Submitted mileage (editable) ── */}
+      {trip.purchased_vehicle_mileage && (
+        <TouchableOpacity
+          style={{ marginHorizontal: px, marginBottom: 16, padding: 14, backgroundColor: 'rgba(245,166,35,0.06)', borderWidth: 1, borderColor: 'rgba(245,166,35,0.15)', borderRadius: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+          onPress={() => { setVehicleMileage(String(trip.purchased_vehicle_mileage)); setShowMileageInput(true); }}
+        >
+          <Text style={{ fontSize: 13, color: colors.textTertiary }}>Vehicle Odometer</Text>
+          <Text style={{ fontSize: 15, color: colors.primary, fontWeight: '800' }}>{Number(trip.purchased_vehicle_mileage).toLocaleString()} mi ✎</Text>
         </TouchableOpacity>
       )}
 
-      {canPause && (
-        <View style={s.tripActions}>
-          <TouchableOpacity style={s.pauseBtn} onPress={() => onPause(trip)}>
-            <Text style={s.pauseBtnText}>⏸ PAUSE</Text>
+      {/* ── Primary action ── */}
+      {canStart && (
+        <View style={{ paddingHorizontal: px, marginBottom: 16 }}>
+          <TouchableOpacity style={[s.startBtn, { borderRadius: 12, paddingVertical: 16 }]} onPress={() => onStart(trip)}>
+            <Text style={[s.startBtnText, { fontSize: 15 }]}>▶  START TRIP</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.endBtn} onPress={() => onEnd(trip)}>
-            <Text style={s.endBtnText}>⏹ END TRIP</Text>
+        </View>
+      )}
+
+      {canPause && (
+        <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: px, marginBottom: 16 }}>
+          <TouchableOpacity style={[s.pauseBtn, { flex: 1, borderRadius: 12, paddingVertical: 16 }]} onPress={() => onPause(trip)}>
+            <Text style={[s.pauseBtnText, { fontSize: 14 }]}>⏸  PAUSE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.endBtn, { flex: 1, borderRadius: 12, paddingVertical: 16 }]} onPress={() => onEnd(trip)}>
+            <Text style={[s.endBtnText, { fontSize: 14 }]}>⏹  END TRIP</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {canResume && (
-        <View style={s.tripActions}>
-          <TouchableOpacity style={s.resumeBtn} onPress={() => onResume(trip)}>
-            <Text style={s.resumeBtnText}>▶ RESUME</Text>
+        <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: px, marginBottom: 16 }}>
+          <TouchableOpacity style={[s.resumeBtn, { flex: 1, borderRadius: 12, paddingVertical: 16 }]} onPress={() => onResume(trip)}>
+            <Text style={[s.resumeBtnText, { fontSize: 14 }]}>▶  RESUME</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.endBtn} onPress={() => onEnd(trip)}>
-            <Text style={s.endBtnText}>⏹ END TRIP</Text>
+          <TouchableOpacity style={[s.endBtn, { flex: 1, borderRadius: 12, paddingVertical: 16 }]} onPress={() => onEnd(trip)}>
+            <Text style={[s.endBtnText, { fontSize: 14 }]}>⏹  END TRIP</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {waitingForDesignated && (
-        <Text style={s.waitingText}>Waiting for designated driver to start</Text>
+        <View style={{ paddingHorizontal: px, marginBottom: 16 }}>
+          <Text style={[s.waitingText, { textAlign: 'center', fontSize: 13 }]}>Waiting for designated driver to start</Text>
+        </View>
       )}
 
       {activeTrip && !isActive && trip.status === 'pending' && (
-        <Text style={s.waitingText}>Another trip is currently active</Text>
+        <View style={{ paddingHorizontal: px, marginBottom: 16 }}>
+          <Text style={[s.waitingText, { textAlign: 'center', fontSize: 13 }]}>Another trip is currently active</Text>
+        </View>
       )}
 
-      {/* Chat Button */}
-      <View style={s.chatRow}>
+      {/* ── Separator ── */}
+      <View style={{ height: 1, backgroundColor: colors.border, marginHorizontal: px, marginBottom: 16 }} />
+
+      {/* ── Tools grid ── */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: px }}>
+        {(trip.status === 'pending' || trip.status === 'in_progress') && (
+          <TouchableOpacity
+            style={{ flex: 1, minWidth: '45%', paddingVertical: 14, backgroundColor: 'rgba(59,130,246,0.08)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.25)', borderRadius: 10, alignItems: 'center', gap: 4 }}
+            onPress={() => {
+              const destination = trip.destination_address || ((trip.notes || '').match(/Address:\s*(.+?)(?:\s*\||$)/) || [])[1]?.trim() || trip.city;
+              Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`);
+            }}
+          >
+            <Text style={{ fontSize: 20 }}>🧭</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#3b82f6', letterSpacing: 1 }}>NAVIGATE</Text>
+          </TouchableOpacity>
+        )}
+
+        {trip.status === 'in_progress' && !trip.purchased_vehicle_mileage && (!isDesignated || trip.trip_type === 'fly') && (
+          <TouchableOpacity
+            style={{ flex: 1, minWidth: '45%', paddingVertical: 14, backgroundColor: 'rgba(245,166,35,0.08)', borderWidth: 1, borderColor: 'rgba(245,166,35,0.2)', borderRadius: 10, alignItems: 'center', gap: 4 }}
+            onPress={() => setShowMileageInput(true)}
+          >
+            <Text style={{ fontSize: 20 }}>📋</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary, letterSpacing: 1 }}>MILEAGE</Text>
+          </TouchableOpacity>
+        )}
+
+        {trip.status === 'in_progress' && (!isDesignated || trip.trip_type === 'fly') && (
+          <TouchableOpacity
+            style={{ flex: 1, minWidth: '45%', paddingVertical: 14, backgroundColor: 'rgba(59,130,246,0.08)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.25)', borderRadius: 10, alignItems: 'center', gap: 4, opacity: uploadingPhoto ? 0.5 : 1 }}
+            onPress={async () => {
+              setUploadingPhoto(true);
+              const count = await onPhotoUpload(trip.id, currentUserId);
+              if (count !== null) setPhotoCount(count);
+              setUploadingPhoto(false);
+            }}
+            disabled={uploadingPhoto}
+          >
+            <Text style={{ fontSize: 20 }}>📸</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#3b82f6', letterSpacing: 1 }}>{uploadingPhoto ? 'UPLOADING...' : `PHOTOS${photoCount > 0 ? ` (${photoCount})` : ''}`}</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
-          style={s.chatBtn}
+          style={{ flex: 1, minWidth: '45%', paddingVertical: 14, backgroundColor: 'rgba(245,166,35,0.06)', borderWidth: 1, borderColor: 'rgba(245,166,35,0.15)', borderRadius: 10, alignItems: 'center', gap: 4 }}
           onPress={() => onChatPress(trip)}
-          activeOpacity={0.7}
         >
-          <Text style={s.chatIcon}>💬</Text>
-          <Text style={s.chatBtnText}>Messages</Text>
-          {unreadCount > 0 && (
-            <View style={s.chatBadge}>
-              <Text style={s.chatBadgeText}>{unreadCount}</Text>
-            </View>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ fontSize: 20 }}>💬</Text>
+            {unreadCount > 0 && (
+              <View style={s.chatBadge}>
+                <Text style={s.chatBadgeText}>{unreadCount}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary, letterSpacing: 1 }}>MESSAGES</Text>
         </TouchableOpacity>
       </View>
+
+      {/* ── Mileage input overlay ── */}
+      {showMileageInput && (
+        <View style={{ marginHorizontal: 20, marginTop: 16, marginBottom: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16 }}>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary, letterSpacing: 1.5, marginBottom: 8 }}>VEHICLE ODOMETER READING</Text>
+          <TextInput
+            style={{ backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, color: colors.textPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center' }}
+            placeholder="Enter mileage"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="decimal-pad"
+            value={vehicleMileage}
+            onChangeText={setVehicleMileage}
+            autoFocus
+          />
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+            <TouchableOpacity
+              style={{ flex: 1, backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 12, alignItems: 'center', opacity: mileageSaving ? 0.5 : 1 }}
+              onPress={async () => {
+                if (!vehicleMileage) return;
+                setMileageSaving(true);
+                await onMileageSubmit(trip.id, Number(vehicleMileage));
+                setMileageSaving(false);
+                setShowMileageInput(false);
+              }}
+              disabled={mileageSaving}
+            >
+              <Text style={{ color: colors.bg, fontWeight: '800', fontSize: 13, letterSpacing: 1 }}>{mileageSaving ? 'SAVING...' : 'SUBMIT'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingVertical: 12, alignItems: 'center' }}
+              onPress={() => { setShowMileageInput(false); setVehicleMileage(''); }}
+            >
+              <Text style={{ color: colors.textTertiary, fontWeight: '700', fontSize: 13 }}>CANCEL</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -615,6 +753,67 @@ export default function MyTripsScreen({ session, navigation }) {
   };
 
   // ── Notify admins of trip status change (fire-and-forget) ──
+  async function handlePhotoUpload(tripId, driverId) {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.7,
+        base64: true,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) return null;
+
+      for (const asset of result.assets) {
+        const ext = asset.uri.split('.').pop()?.toLowerCase() || 'jpg';
+        const fileName = `${tripId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+        // Use base64 from image picker and decode to ArrayBuffer
+        if (!asset.base64) {
+          console.log('[Photo] No base64 data for asset, skipping');
+          continue;
+        }
+
+        const { error: uploadErr } = await supabase.storage
+          .from('vehicle-photos')
+          .upload(fileName, decode(asset.base64), { cacheControl: '3600', contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}` });
+
+        if (uploadErr) {
+          console.log('[Photo] Upload failed:', uploadErr.message);
+          continue;
+        }
+
+        await supabase.from('vehicle_photos').insert({
+          trip_id: tripId,
+          driver_id: driverId,
+          storage_path: fileName,
+        });
+      }
+
+      // Return updated count
+      const { count } = await supabase
+        .from('vehicle_photos')
+        .select('id', { count: 'exact', head: true })
+        .eq('trip_id', tripId);
+      return count || 0;
+    } catch (e) {
+      Alert.alert('Upload Failed', e.message);
+      return null;
+    }
+  }
+
+  async function handleMileageSubmit(tripId, mileage) {
+    const { error } = await supabase
+      .from('trips')
+      .update({ purchased_vehicle_mileage: mileage })
+      .eq('id', tripId);
+    if (error) {
+      Alert.alert('Failed', error.message);
+      return;
+    }
+    // Update local state
+    setTrips(prev => prev.map(t => t.id === tripId ? { ...t, purchased_vehicle_mileage: mileage } : t));
+  }
+
   function notifyTripStatus(tripId, action) {
     fetch('https://yincjogkjvotupzgetqg.supabase.co/functions/v1/notify-trip-status', {
       method: 'POST',
@@ -712,9 +911,7 @@ export default function MyTripsScreen({ session, navigation }) {
           const mileageActive = !tripData.mileageStartTime || Date.now() >= tripData.mileageStartTime;
 
           if (mileageActive && tripData.lastLat && tripData.lastLon) {
-            const segmentMiles = getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
-            // Ignore jumps over 5 miles in a single update — GPS teleport from tracking gap
-            if (segmentMiles < 5) newMiles += segmentMiles;
+            newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
           }
 
           // Speed tracking (rawSpeed is m/s, convert to mph)
@@ -883,7 +1080,13 @@ export default function MyTripsScreen({ session, navigation }) {
     }
     setActiveTrip(prev => prev ? { ...prev, paused: true } : prev);
     notifyTripStatus(trip.id, 'paused');
-    logEvent('info', 'trip_paused', `Trip to ${trip.city} paused`, { trip_id: trip.id });
+    // Direct write instead of queue — pause events are critical for ops
+    await supabase.from('system_logs').insert({
+      source: 'mobile', level: 'info', event: 'trip_paused',
+      message: `Trip to ${trip.city} paused`,
+      metadata: { trip_id: trip.id, driver_id: session.user.id },
+      created_at: new Date().toISOString(),
+    });
   }
 
   // ── Resume trip ─────────────────────────────────────────────────────────
@@ -947,9 +1150,7 @@ export default function MyTripsScreen({ session, navigation }) {
 
           let newMiles = tripData.miles || 0;
           if (resumeMileageActive && tripData.lastLat && tripData.lastLon) {
-            const segmentMiles = getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
-            // Ignore jumps over 5 miles in a single update — GPS teleport from tracking gap
-            if (segmentMiles < 5) newMiles += segmentMiles;
+            newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
           }
 
           let speedMph = 0;
@@ -1051,7 +1252,12 @@ export default function MyTripsScreen({ session, navigation }) {
     } catch {}
 
     notifyTripStatus(trip.id, 'resumed');
-    logEvent('info', 'trip_resumed', `Trip to ${trip.city} resumed`, { trip_id: trip.id });
+    await supabase.from('system_logs').insert({
+      source: 'mobile', level: 'info', event: 'trip_resumed',
+      message: `Trip to ${trip.city} resumed`,
+      metadata: { trip_id: trip.id, driver_id: session.user.id },
+      created_at: new Date().toISOString(),
+    });
   }
 
   // ── End trip ─────────────────────────────────────────────────────────────
@@ -1226,6 +1432,8 @@ export default function MyTripsScreen({ session, navigation }) {
               onResume={handleResume}
               activeTrip={activeTrip}
               linkedInfo={linkedDriverNames[trip.id]}
+              onMileageSubmit={handleMileageSubmit}
+              onPhotoUpload={handlePhotoUpload}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
                 navigation.navigate('TripChat', {
@@ -1253,6 +1461,8 @@ export default function MyTripsScreen({ session, navigation }) {
               onResume={handleResume}
               activeTrip={activeTrip}
               linkedInfo={linkedDriverNames[trip.id]}
+              onMileageSubmit={handleMileageSubmit}
+              onPhotoUpload={handlePhotoUpload}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
                 navigation.navigate('TripChat', {

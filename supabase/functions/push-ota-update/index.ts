@@ -21,7 +21,7 @@ serve(async (req) => {
     const { data: drivers } = await supabase
       .from('profiles')
       .select('id, name, push_token')
-      .eq('role', 'driver')
+      .in('role', ['driver', 'manager'])
       .not('push_token', 'is', null)
 
     if (!drivers || drivers.length === 0) {

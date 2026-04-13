@@ -12,6 +12,8 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
+  Image,
+  Dimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
@@ -63,7 +65,10 @@ function notifyTripAssigned(tripId, driverIds, city, scheduledPickup) {
 
 export default function AdminTripsScreen({ session, userRole }) {
   const isReadOnly = userRole === 'caller';
+  const canSeePay = userRole === 'admin';
   const { isTablet } = useResponsive();
+  const [viewingPhotos, setViewingPhotos] = useState(null); // trip object
+  const [photoCounts, setPhotoCounts] = useState({});
   const [trips, setTrips] = useState([]);
   const [allProfiles, setAllProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -116,6 +121,14 @@ export default function AdminTripsScreen({ session, userRole }) {
     else setAllProfiles(profilesRes.data || []);
 
     setAvailability(availRes.data || []);
+
+    // Load photo counts
+    const { data: photoData } = await supabase.from('vehicle_photos').select('trip_id');
+    if (photoData) {
+      const counts = {};
+      photoData.forEach((p) => { counts[p.trip_id] = (counts[p.trip_id] || 0) + 1; });
+      setPhotoCounts(counts);
+    }
 
     setLoading(false);
   }
@@ -416,6 +429,8 @@ export default function AdminTripsScreen({ session, userRole }) {
                 onChatPress={(t) => setChatTrip(t)}
                 onDelete={isReadOnly ? null : handleDeleteTrip}
                 isReadOnly={isReadOnly}
+                photoCount={photoCounts[trip.id] || 0}
+                onViewPhotos={(t) => setViewingPhotos(t)}
               />
             );
           });
@@ -450,6 +465,7 @@ export default function AdminTripsScreen({ session, userRole }) {
         <FinalizeTripModal
           trip={selectedTrip}
           allProfiles={allProfiles}
+          canSeePay={canSeePay}
           onClose={() => {
             setShowFinalizeModal(false);
             setSelectedTrip(null);
@@ -459,6 +475,14 @@ export default function AdminTripsScreen({ session, userRole }) {
             setShowFinalizeModal(false);
             setSelectedTrip(null);
           }}
+        />
+      )}
+
+      {/* Vehicle Photos Modal */}
+      {viewingPhotos && (
+        <VehiclePhotosModal
+          trip={viewingPhotos}
+          onClose={() => setViewingPhotos(null)}
         />
       )}
 
@@ -505,7 +529,7 @@ export default function AdminTripsScreen({ session, userRole }) {
 }
 
 // ── TRIP CARD (Card Layout) ──────────────────────────────────────────────────────────────────────
-function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPress, onDelete, isReadOnly }) {
+function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPress, onDelete, isReadOnly, onViewPhotos, photoCount }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -584,6 +608,16 @@ function TripCard({ trip, allProfiles, onPress, unreadCount, isTablet, onChatPre
             activeOpacity={0.7}
           >
             <Text style={s.deleteBtnText}>DELETE</Text>
+          </TouchableOpacity>
+        )}
+        {photoCount > 0 && (
+          <TouchableOpacity
+            style={[s.chatBtn, { backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.3)' }]}
+            onPress={() => onViewPhotos(trip)}
+            activeOpacity={0.7}
+          >
+            <Text style={s.chatIcon}>📸</Text>
+            <Text style={{ fontSize: 10, color: '#3b82f6', fontWeight: '700' }}>{photoCount}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -669,6 +703,91 @@ function DriverWarnings({ warnings }) {
 
 // ── CREATE TRIP VIEW ───────────────────────────────────────────────────────────────────────────────
 // ── AA GROUP LABEL HELPER ──
+// ── VEHICLE PHOTOS MODAL (MOBILE) ────────────────────────────────────────────
+function VehiclePhotosModal({ trip, onClose }) {
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const screenWidth = Dimensions.get('window').width;
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase
+        .from('vehicle_photos')
+        .select('*')
+        .eq('trip_id', trip.id)
+        .order('created_at', { ascending: true });
+      setPhotos(data || []);
+      setLoading(false);
+    }
+    load();
+  }, [trip.id]);
+
+  function getPhotoUrl(storagePath) {
+    const { data } = supabase.storage.from('vehicle-photos').getPublicUrl(storagePath);
+    return data?.publicUrl;
+  }
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)' }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 50 }}>
+          <View>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>Vehicle Photos</Text>
+            <Text style={{ color: colors.textTertiary, fontSize: 12 }}>{trip.crm_id} — {trip.city}</Text>
+          </View>
+          <TouchableOpacity onPress={onClose}>
+            <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '700' }}>CLOSE</Text>
+          </TouchableOpacity>
+        </View>
+
+        {loading ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : photos.length === 0 ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ color: colors.textTertiary }}>No photos uploaded</Text>
+          </View>
+        ) : (
+          <>
+            {/* Main photo */}
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <Image
+                source={{ uri: getPhotoUrl(photos[selectedIdx].storage_path) }}
+                style={{ width: screenWidth - 32, height: screenWidth - 32, borderRadius: 8 }}
+                resizeMode="contain"
+              />
+              <Text style={{ color: colors.textTertiary, fontSize: 11, marginTop: 8 }}>
+                {selectedIdx + 1} of {photos.length} · {new Date(photos[selectedIdx].created_at).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}
+              </Text>
+            </View>
+
+            {/* Thumbnail strip */}
+            {photos.length > 1 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingVertical: 12, paddingHorizontal: 16 }}>
+                {photos.map((photo, idx) => (
+                  <TouchableOpacity key={photo.id} onPress={() => setSelectedIdx(idx)} style={{ marginRight: 8 }}>
+                    <Image
+                      source={{ uri: getPhotoUrl(photo.storage_path) }}
+                      style={{
+                        width: 60, height: 60, borderRadius: 6,
+                        borderWidth: selectedIdx === idx ? 2 : 1,
+                        borderColor: selectedIdx === idx ? colors.primary : colors.border,
+                      }}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 function aaGroupLabel(trip) {
   const d = trip.scheduled_pickup ? new Date(trip.scheduled_pickup) : new Date();
   return `AA ${d.getMonth() + 1}/${d.getDate()}`;
@@ -685,10 +804,10 @@ function AAGroupFinalizeModal({ groupTrips, allProfiles, onClose, onFinalized })
         ? ((new Date(trip.actual_end) - new Date(trip.actual_start)) / 3600000).toFixed(1)
         : '',
       miles: String(trip.miles ?? ''),
+      stockNumbers: trip.stock_numbers || '',
+      fuelCost: '',
     })),
   );
-  const [stockNumbers, setStockNumbers] = useState(groupTrips[0]?.stock_numbers || '');
-  const [fuelCost, setFuelCost] = useState('');
   const [otherCost, setOtherCost] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -698,15 +817,12 @@ function AAGroupFinalizeModal({ groupTrips, allProfiles, onClose, onFinalized })
   }
 
   const totalPay = driverForms.reduce((sum, f) => sum + (Number(f.pay) || 0), 0);
-  const computedActualCost = totalPay + (Number(fuelCost) || 0) + (Number(otherCost) || 0);
+  const totalFuel = driverForms.reduce((sum, f) => sum + (Number(f.fuelCost) || 0), 0);
+  const computedActualCost = totalPay + totalFuel + (Number(otherCost) || 0);
 
   async function finalizeTrip(df) {
     const trip = groupTrips.find((t) => t.id === df.tripId);
-    const costFields = {
-      fuel_cost: fuelCost ? Number(fuelCost) : null,
-      other_cost: otherCost ? Number(otherCost) : null,
-    };
-    const driverCost = Number(df.pay) + (Number(fuelCost) || 0) + (Number(otherCost) || 0);
+    const driverCost = Number(df.pay) + (Number(df.fuelCost) || 0) + (Number(otherCost) || 0);
 
     const { error: tripErr } = await supabase
       .from('trips')
@@ -715,10 +831,11 @@ function AAGroupFinalizeModal({ groupTrips, allProfiles, onClose, onFinalized })
         pay: Number(df.pay),
         miles: df.miles ? Number(df.miles) : 0,
         hours: df.hours ? Number(df.hours) : 0,
-        stock_numbers: stockNumbers || null,
+        stock_numbers: df.stockNumbers || null,
+        fuel_cost: df.fuelCost ? Number(df.fuelCost) : null,
+        other_cost: otherCost ? Number(otherCost) : null,
         actual_cost: driverCost,
         estimated_cost: 0,
-        ...costFields,
       })
       .eq('id', df.tripId);
 
@@ -737,8 +854,9 @@ function AAGroupFinalizeModal({ groupTrips, allProfiles, onClose, onFinalized })
       actual_cost: driverCost,
       estimated_cost: 0,
       trip_type: 'aa',
-      stock_numbers: stockNumbers || null,
-      ...costFields,
+      stock_numbers: df.stockNumbers || null,
+      fuel_cost: df.fuelCost ? Number(df.fuelCost) : null,
+      other_cost: otherCost ? Number(otherCost) : null,
     });
 
     if (entryErr) return entryErr.message;
@@ -788,20 +906,8 @@ function AAGroupFinalizeModal({ groupTrips, allProfiles, onClose, onFinalized })
           </Text>
 
           <ScrollView style={{ maxHeight: 500 }} keyboardShouldPersistTaps="handled">
-            {/* Editable stock numbers */}
-            <View style={s.modalField}>
-              <Text style={s.modalLabel}>Stock Numbers</Text>
-              <TextInput
-                style={s.modalInput}
-                placeholder="A123, B456, C789"
-                placeholderTextColor={colors.textTertiary}
-                value={stockNumbers}
-                onChangeText={setStockNumbers}
-              />
-            </View>
-
-            {/* Per-driver pay */}
-            <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textTertiary, marginTop: 12, marginBottom: 8 }}>DRIVER PAY</Text>
+            {/* Per-driver section */}
+            <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textTertiary, marginTop: 4, marginBottom: 8 }}>DRIVERS</Text>
             {driverForms.map((df, idx) => {
               const driver = allProfiles.find((p) => p.id === df.driverId);
               const trip = groupTrips.find((t) => t.id === df.tripId);
@@ -831,40 +937,41 @@ function AAGroupFinalizeModal({ groupTrips, allProfiles, onClose, onFinalized })
                     )}
                   </View>
                   {!isFinalized && (
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Pay ($)</Text>
-                        <TextInput style={s.modalInput} value={df.pay} onChangeText={(v) => setDriverField(idx, 'pay', v)} keyboardType="decimal-pad" placeholder="45" placeholderTextColor={colors.textTertiary} />
+                    <>
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Stock Numbers</Text>
+                        <TextInput style={s.modalInput} value={df.stockNumbers} onChangeText={(v) => setDriverField(idx, 'stockNumbers', v)} placeholder="AB123, AB124" placeholderTextColor={colors.textTertiary} />
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Hours</Text>
-                        <TextInput style={s.modalInput} value={df.hours} onChangeText={(v) => setDriverField(idx, 'hours', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textTertiary} />
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Pay ($)</Text>
+                          <TextInput style={s.modalInput} value={df.pay} onChangeText={(v) => setDriverField(idx, 'pay', v)} keyboardType="decimal-pad" placeholder="45" placeholderTextColor={colors.textTertiary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Gas ($)</Text>
+                          <TextInput style={s.modalInput} value={df.fuelCost} onChangeText={(v) => setDriverField(idx, 'fuelCost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textTertiary} />
+                        </View>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Miles</Text>
-                        <TextInput style={s.modalInput} value={df.miles} onChangeText={(v) => setDriverField(idx, 'miles', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textTertiary} />
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Hours</Text>
+                          <TextInput style={s.modalInput} value={df.hours} onChangeText={(v) => setDriverField(idx, 'hours', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textTertiary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Miles</Text>
+                          <TextInput style={s.modalInput} value={df.miles} onChangeText={(v) => setDriverField(idx, 'miles', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textTertiary} />
+                        </View>
                       </View>
-                    </View>
+                    </>
                   )}
                 </View>
               );
             })}
 
             {/* Shared costs */}
-            <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textTertiary, marginTop: 12, marginBottom: 8 }}>SHARED COSTS</Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <View style={{ flex: 1 }}>
-                <View style={s.modalField}>
-                  <Text style={s.modalLabel}>Fuel ($)</Text>
-                  <TextInput style={s.modalInput} value={fuelCost} onChangeText={setFuelCost} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textTertiary} />
-                </View>
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={s.modalField}>
-                  <Text style={s.modalLabel}>Other ($)</Text>
-                  <TextInput style={s.modalInput} value={otherCost} onChangeText={setOtherCost} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textTertiary} />
-                </View>
-              </View>
+            <View style={s.modalField}>
+              <Text style={s.modalLabel}>Other Shared Expenses ($)</Text>
+              <TextInput style={s.modalInput} value={otherCost} onChangeText={setOtherCost} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textTertiary} />
             </View>
             {/* Total */}
             <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -911,11 +1018,17 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
     scheduled_pickup: now,
     notes: '',
     stock_numbers: '',
+    aa_stock_numbers: {},
+    destination_address: '',
+    dealer_plate: '',
+    chase_vehicle_stock: '',
     aa_driver_ids: [],
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const addressTimeoutRef = React.useRef(null);
+
   // Date picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -981,7 +1094,9 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
         notes: form.notes || null,
         status: 'pending',
         group_id: groupId,
-        stock_numbers: form.stock_numbers || null,
+        stock_numbers: (form.aa_stock_numbers || {})[driverId] || null,
+        destination_address: form.destination_address || null,
+        dealer_plate: form.dealer_plate || null,
       }));
 
       const { data, error: err } = await supabase
@@ -1011,6 +1126,9 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
       carpage_link: form.carpage_link || null,
       scheduled_pickup: form.scheduled_pickup.toISOString(),
       notes: form.notes || null,
+      destination_address: form.destination_address || null,
+      dealer_plate: form.dealer_plate || null,
+      chase_vehicle_stock: form.trip_type === 'drive' ? (form.chase_vehicle_stock || null) : null,
       status: 'pending',
     };
 
@@ -1223,17 +1341,25 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
           </View>
         )}
 
-        {/* ── AA: stock numbers ── */}
-        {form.trip_type === 'aa' && (
+        {/* ── AA: per-driver stock numbers ── */}
+        {form.trip_type === 'aa' && form.aa_driver_ids.length > 0 && (
           <View style={s.field}>
-            <Text style={s.label}>Stock Numbers</Text>
-            <TextInput
-              style={s.input}
-              placeholder="A123, B456, C789"
-              placeholderTextColor={colors.textTertiary}
-              value={form.stock_numbers}
-              onChangeText={(text) => set('stock_numbers', text)}
-            />
+            <Text style={s.label}>Stock Numbers (per driver)</Text>
+            {form.aa_driver_ids.map((dId) => {
+              const d = drivers.find((dr) => dr.id === dId);
+              return (
+                <View key={dId} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary, minWidth: 100 }}>{d?.name || '—'}</Text>
+                  <TextInput
+                    style={[s.input, { flex: 1, marginBottom: 0 }]}
+                    placeholder="AB123, AB124"
+                    placeholderTextColor={colors.textTertiary}
+                    value={(form.aa_stock_numbers || {})[dId] || ''}
+                    onChangeText={(text) => set('aa_stock_numbers', { ...(form.aa_stock_numbers || {}), [dId]: text })}
+                  />
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -1259,6 +1385,30 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
             autoCapitalize="characters"
           />
         </View>
+
+        <View style={s.field}>
+          <Text style={s.label}>Dealer Plate #</Text>
+          <TextInput
+            style={s.input}
+            placeholder="D-1234"
+            placeholderTextColor={colors.textTertiary}
+            value={form.dealer_plate}
+            onChangeText={(text) => set('dealer_plate', text)}
+          />
+        </View>
+
+        {form.trip_type === 'drive' && (
+          <View style={s.field}>
+            <Text style={s.label}>Chase Vehicle Stock #</Text>
+            <TextInput
+              style={s.input}
+              placeholder="STK-001"
+              placeholderTextColor={colors.textTertiary}
+              value={form.chase_vehicle_stock}
+              onChangeText={(text) => set('chase_vehicle_stock', text)}
+            />
+          </View>
+        )}
 
         {/* DATE & TIME PICKERS */}
         <View style={s.field}>
@@ -1325,6 +1475,47 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
             onChangeText={(text) => set('carpage_link', text)}
             autoCapitalize="none"
           />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.label}>Pickup Address</Text>
+          <TextInput
+            style={s.input}
+            placeholder="Start typing an address..."
+            placeholderTextColor={colors.textTertiary}
+            value={form.destination_address}
+            onChangeText={(text) => {
+              set('destination_address', text);
+              if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current);
+              if (text.length < 3) { setAddressSuggestions([]); return; }
+              addressTimeoutRef.current = setTimeout(async () => {
+                try {
+                  const res = await fetch(
+                    `https://yincjogkjvotupzgetqg.supabase.co/functions/v1/places-autocomplete?input=${encodeURIComponent(text)}`,
+                    { headers: { apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las' }}
+                  );
+                  const data = await res.json();
+                  setAddressSuggestions(data.predictions || []);
+                } catch { setAddressSuggestions([]); }
+              }, 300);
+            }}
+          />
+          {addressSuggestions.length > 0 && (
+            <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 6, marginTop: 4 }}>
+              {addressSuggestions.map((s) => (
+                <TouchableOpacity
+                  key={s.place_id}
+                  style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                  onPress={() => {
+                    set('destination_address', s.description);
+                    setAddressSuggestions([]);
+                  }}
+                >
+                  <Text style={{ fontSize: 13, color: colors.textPrimary }}>{s.description}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={s.field}>
@@ -1541,7 +1732,7 @@ function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, avai
             </View>
 
             {/* Speed Analytics */}
-            {trip.speed_data && trip.speed_data.top_speed > 0 && (trip.status === 'completed' || trip.status === 'finalized') && (
+            {false && trip.speed_data && trip.speed_data.top_speed > 0 && (trip.status === 'completed' || trip.status === 'finalized') && (
               <View style={s.speedCards}>
                 <View style={s.speedCard}>
                   <Text style={s.speedCardLabel}>TOP SPEED</Text>
@@ -1632,7 +1823,7 @@ function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, avai
 }
 
 // ── FINALIZE TRIP MODAL ────────────────────────────────────────────────────────────────────────────
-function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
+function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized, canSeePay = true }) {
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -1643,12 +1834,18 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
       ? ((new Date(trip.actual_end) - new Date(trip.actual_start)) / 3600000).toFixed(1)
       : '';
 
-  // $45 suggested pay for AA, Courier, and Airport trips
-  const suggestedPay = ['aa', 'courier', 'airport'].includes(trip.trip_type) ? '45' : '';
+  // Auto-fill pay: hourly_wage * hours if available, else $45 for AA/courier/airport
+  function calcPay(driver, hours) {
+    if (['aa', 'courier', 'airport'].includes(trip.trip_type)) return '45';
+    if (driver?.hourly_wage && hours) {
+      return (Number(driver.hourly_wage) * Number(hours)).toFixed(2);
+    }
+    return '';
+  }
 
   const [form, setForm] = useState({
-    pay: suggestedPay,
-    pay2: '',
+    pay: calcPay(driver1, duration),
+    pay2: driver2 ? calcPay(driver2, duration) : '',
     hours: duration,
     miles: String(trip.miles || ''),
     estimated_cost: String(trip.estimated_cost || ''),
@@ -1658,9 +1855,31 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
     other_cost: String(trip.other_cost || ''),
     stock_numbers: trip.stock_numbers ?? '',
     recon_missed: false,
+    turned_down: false,
+    has_additional_recon: false,
+    additional_recon_cost: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Auto-fetch ticket cost from flight monitor for fly trips
+  useEffect(() => {
+    if (trip.trip_type !== 'fly' || !driver1?.name) return;
+    fetch('https://yincjogkjvotupzgetqg.supabase.co/functions/v1/flight-proxy/api/flights/today', {
+      headers: { apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las' },
+    })
+      .then((r) => r.json())
+      .then((flights) => {
+        const firstName = driver1.name.toLowerCase().split(' ')[0];
+        const match = flights.find((f) =>
+          f.passenger_name && f.passenger_name.toLowerCase().includes(firstName) && f.ticket_cost
+        );
+        if (match?.ticket_cost) {
+          setForm((prev) => prev.flight_cost ? prev : { ...prev, flight_cost: String(match.ticket_cost) });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -1673,11 +1892,11 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
   ].reduce((sum, v) => sum + (Number(v) || 0), 0);
 
   async function handleFinalize() {
-    if (!form.pay) {
+    if (canSeePay && !form.pay) {
       setError('Driver 1 pay is required');
       return;
     }
-    if (driver2 && !form.pay2) {
+    if (canSeePay && driver2 && !form.pay2) {
       setError('Driver 2 pay is required');
       return;
     }
@@ -1705,6 +1924,9 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
         estimated_cost: Number(form.estimated_cost),
         recon_missed: form.recon_missed,
         stock_numbers: form.stock_numbers || null,
+        turned_down: form.turned_down,
+        has_additional_recon: form.has_additional_recon,
+        additional_recon_cost: form.has_additional_recon && form.additional_recon_cost ? Number(form.additional_recon_cost) : null,
         ...costFields,
       })
       .eq('id', trip.id);
@@ -1728,6 +1950,9 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
       recon_missed: form.recon_missed,
       trip_type: trip.trip_type,
       stock_numbers: form.stock_numbers || null,
+      turned_down: form.turned_down,
+      has_additional_recon: form.has_additional_recon,
+      additional_recon_cost: form.has_additional_recon && form.additional_recon_cost ? Number(form.additional_recon_cost) : null,
       ...costFields,
     };
 
@@ -1780,7 +2005,7 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
 
           <ScrollView style={{ maxHeight: 400 }} keyboardShouldPersistTaps="handled">
             {/* Speed Analytics */}
-            {trip.speed_data && trip.speed_data.top_speed > 0 && (
+            {false && trip.speed_data && trip.speed_data.top_speed > 0 && (
               <View style={s.speedCards}>
                 <View style={s.speedCard}>
                   <Text style={s.speedCardLabel}>TOP SPEED</Text>
@@ -1809,19 +2034,21 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               </View>
             )}
 
-            <View style={s.modalField}>
-              <Text style={s.modalLabel}>{driver1?.name} Pay ($) *</Text>
-              <TextInput
-                style={s.modalInput}
-                placeholder="0.00"
-                placeholderTextColor={colors.textTertiary}
-                keyboardType="decimal-pad"
-                value={form.pay}
-                onChangeText={(text) => set('pay', text)}
-              />
-            </View>
+            {canSeePay && (
+              <View style={s.modalField}>
+                <Text style={s.modalLabel}>{driver1?.name} Pay ($) *</Text>
+                <TextInput
+                  style={s.modalInput}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={form.pay}
+                  onChangeText={(text) => set('pay', text)}
+                />
+              </View>
+            )}
 
-            {driver2 && (
+            {canSeePay && driver2 && (
               <View style={s.modalField}>
                 <Text style={s.modalLabel}>{driver2.name} Pay ($) *</Text>
                 <TextInput
@@ -1963,8 +2190,42 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized }) {
               >
                 {form.recon_missed && <Text style={s.checkmark}>✓</Text>}
               </View>
-              <Text style={s.checkboxLabel}>Recon was missed on this vehicle</Text>
+              <Text style={s.checkboxLabel}>Driver Missed Recon (resets bonus streak)</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.checkboxRow}
+              onPress={() => set('turned_down', !form.turned_down)}
+            >
+              <View style={[s.checkbox, form.turned_down && s.checkboxChecked]}>
+                {form.turned_down && <Text style={s.checkmark}>✓</Text>}
+              </View>
+              <Text style={s.checkboxLabel}>Vehicle Turned Down (no purchase)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.checkboxRow}
+              onPress={() => set('has_additional_recon', !form.has_additional_recon)}
+            >
+              <View style={[s.checkbox, form.has_additional_recon && s.checkboxChecked]}>
+                {form.has_additional_recon && <Text style={s.checkmark}>✓</Text>}
+              </View>
+              <Text style={s.checkboxLabel}>Additional Recon (unexpected repairs)</Text>
+            </TouchableOpacity>
+
+            {form.has_additional_recon && (
+              <View style={s.modalField}>
+                <Text style={s.modalLabel}>Additional Recon Cost ($)</Text>
+                <TextInput
+                  style={s.modalInput}
+                  placeholder="Enter amount when known"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={form.additional_recon_cost}
+                  onChangeText={(text) => set('additional_recon_cost', text)}
+                />
+              </View>
+            )}
           </ScrollView>
 
           {error ? <Text style={s.modalError}>{error}</Text> : null}

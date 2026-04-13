@@ -59,7 +59,8 @@ function getQuickRange(rangeId) {
   }
 }
 
-export default function AllEntriesScreen() {
+export default function AllEntriesScreen({ userRole }) {
+  const canSeePay = userRole === 'admin';
   const { isTablet } = useResponsive();
   const [entries, setEntries] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -202,7 +203,8 @@ export default function AllEntriesScreen() {
     try {
       const headers = [
         'Date', 'Driver', 'City', 'Trip Type', 'CRM ID', 'Hours', 'Miles', 'Drive Time (GPS)',
-        'Pay', 'Flight Ticket', 'Rideshare', 'Fuel', 'Other', 'Actual Cost', 'Estimated Cost',
+        ...(canSeePay ? ['Pay'] : []),
+        'Flight Ticket', 'Rideshare', 'Fuel', 'Other', 'Actual Cost', 'Estimated Cost',
         'Stock Numbers', 'Recon',
       ];
       const rows = filtered.map(e => {
@@ -216,7 +218,7 @@ export default function AllEntriesScreen() {
           e.hours ?? '',
           e.miles ?? 0,
           e.drive_time ?? '',
-          Number(e.pay || 0).toFixed(2),
+          ...(canSeePay ? [Number(e.pay || 0).toFixed(2)] : []),
           e.flight_cost ?? '',
           e.rideshare_cost ?? '',
           e.fuel_cost ?? '',
@@ -364,7 +366,7 @@ export default function AllEntriesScreen() {
                   {driver?.name ?? '—'}
                   {driver?.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
                 </Text>
-                <Text style={s.pay}>{fmtMoney(e.pay)}</Text>
+                {canSeePay && <Text style={s.pay}>{fmtMoney(e.pay)}</Text>}
               </View>
               <View style={s.cardMid}>
                 <Text style={s.meta}>{fmtDate(e.date)}</Text>

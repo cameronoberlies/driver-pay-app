@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     const { data: admins } = await supabaseAdmin
       .from('profiles')
       .select('id, push_token')
-      .in('role', ['admin', 'caller'])
+      .in('role', ['admin', 'manager', 'caller'])
       .not('push_token', 'is', null);
 
     const pushTokens = (admins || [])

@@ -138,7 +138,8 @@ function PendingRow({ entry, driverName, driverWillingToFly, onComplete, onDelet
   );
 }
 
-export default function LogEntryScreen() {
+export default function LogEntryScreen({ userRole }) {
+  const canSeePay = userRole === 'admin';
   const { isTablet } = useResponsive();
   const [drivers, setDrivers] = useState([]);
   const [pending, setPending] = useState([]);
@@ -165,6 +166,8 @@ export default function LogEntryScreen() {
     crm_id: '',
     trip_type: '',
     stock_numbers: '',
+    dealer_plate: '',
+    chase_vehicle_stock: '',
     recon_missed: false,
   });
 
@@ -213,7 +216,7 @@ export default function LogEntryScreen() {
   ].reduce((sum, v) => sum + (Number(v) || 0), 0);
 
   async function handleSave() {
-    if (!form.driver_id || !form.pay) {
+    if (!form.driver_id || (canSeePay && !form.pay)) {
       Alert.alert('Missing Fields', 'Driver and pay are required.');
       return;
     }
@@ -245,7 +248,7 @@ export default function LogEntryScreen() {
     setForm(f => ({
       ...f, pay: '', hours: '', miles: '', estimated_cost: '',
       flight_cost: '', rideshare_cost: '', fuel_cost: '', other_cost: '',
-      city: '', crm_id: '', trip_type: '', stock_numbers: '', recon_missed: false,
+      city: '', crm_id: '', trip_type: '', stock_numbers: '', dealer_plate: '', chase_vehicle_stock: '', recon_missed: false,
     }));
     setTimeout(() => setSaved(false), 3000);
   }
@@ -340,11 +343,13 @@ export default function LogEntryScreen() {
       )}
 
       <View style={s.row}>
-        <View style={s.half}>
-          <Text style={s.label}>PAY ($)</Text>
-          <TextInput style={s.input} value={form.pay} onChangeText={v => set('pay', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
-        </View>
-        <View style={s.half}>
+        {canSeePay && (
+          <View style={s.half}>
+            <Text style={s.label}>PAY ($)</Text>
+            <TextInput style={s.input} value={form.pay} onChangeText={v => set('pay', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+          </View>
+        )}
+        <View style={canSeePay ? s.half : { flex: 1 }}>
           <Text style={s.label}>HOURS WORKED</Text>
           <TextInput style={s.input} value={form.hours} onChangeText={v => set('hours', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
         </View>
@@ -379,6 +384,16 @@ export default function LogEntryScreen() {
 
       <Text style={s.label}>CARPAGE ID</Text>
       <TextInput style={s.input} value={form.crm_id} onChangeText={v => set('crm_id', v.toUpperCase())} placeholder="CP-XXXX" placeholderTextColor={colors.textMuted} autoCapitalize="characters" />
+
+      <Text style={s.label}>DEALER PLATE #</Text>
+      <TextInput style={s.input} value={form.dealer_plate} onChangeText={v => set('dealer_plate', v)} placeholder="D-1234" placeholderTextColor={colors.textMuted} />
+
+      {form.trip_type === 'drive' && (
+        <>
+          <Text style={s.label}>CHASE VEHICLE STOCK #</Text>
+          <TextInput style={s.input} value={form.chase_vehicle_stock} onChangeText={v => set('chase_vehicle_stock', v)} placeholder="STK-001" placeholderTextColor={colors.textMuted} />
+        </>
+      )}
 
       {form.trip_type === 'aa' && (
         <>

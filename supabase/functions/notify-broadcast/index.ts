@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       .eq('id', sender_id)
       .single();
 
-    if (!callerProfile || callerProfile.role !== 'admin') {
+    if (!callerProfile || !['admin', 'manager'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Admin only' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -56,9 +56,9 @@ Deno.serve(async (req) => {
     const recipientTarget = target || 'drivers';
     let roleFilter: string[];
     if (recipientTarget === 'all') {
-      roleFilter = ['driver', 'admin', 'caller'];
+      roleFilter = ['driver', 'admin', 'manager', 'caller'];
     } else if (recipientTarget === 'admins') {
-      roleFilter = ['admin', 'caller'];
+      roleFilter = ['admin', 'manager', 'caller'];
     } else {
       roleFilter = ['driver'];
     }

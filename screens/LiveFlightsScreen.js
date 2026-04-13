@@ -24,8 +24,8 @@ export default function LiveFlightsScreen() {
   const [expandedSections, setExpandedSections] = useState({
     IN_AIR: true,
     DELAYED: true,
-    SCHEDULED: false,
-    LANDED: false,
+    SCHEDULED: true,
+    LANDED: true,
   });
 
   useEffect(() => {
@@ -102,21 +102,30 @@ export default function LiveFlightsScreen() {
         </Text>
       </View>
 
-      {/* Flight Groups */}
-      {Object.entries(groupedFlights).map(([status, statusFlights]) => (
-        <FlightGroup
-          key={status}
-          status={status}
-          flights={statusFlights}
-          expanded={expandedSections[status]}
-          isTablet={isTablet}
-          onToggle={() => toggleSection(status)}
-          onFlightPress={(flight) => {
-            setSelectedFlight(flight);
-            setModalVisible(true);
-          }}
-        />
-      ))}
+      {/* Flight Cards */}
+      <View style={isTablet ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : undefined}>
+        {flights.map((flight) => {
+          const statusColors = {
+            IN_AIR: colors.info,
+            DELAYED: colors.warning,
+            SCHEDULED: colors.textSecondary,
+            LANDED: colors.success,
+            CANCELLED: colors.error,
+          };
+          return (
+            <TouchableOpacity
+              key={flight.id}
+              style={isTablet ? { width: '48.5%' } : undefined}
+              onPress={() => {
+                setSelectedFlight(flight);
+                setModalVisible(true);
+              }}
+            >
+              <FlightCard flight={flight} statusColor={statusColors[flight.status] || colors.textSecondary} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       <FlightDetailsModal
         visible={modalVisible}
@@ -128,7 +137,7 @@ export default function LiveFlightsScreen() {
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>✈️</Text>
           <Text style={styles.emptySubtext}>
-            No flights scheduled for today
+            No upcoming flights
           </Text>
         </View>
       )}

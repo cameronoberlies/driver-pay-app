@@ -28,9 +28,11 @@ const EMPTY_FORM = {
   can_drive_manual: false,
   willing_to_fly: false,
   drivers_license_number: '',
+  hourly_wage: '',
 };
 
-export default function ManageUsersModal({ visible, onClose, session }) {
+export default function ManageUsersModal({ visible, onClose, session, userRole }) {
+  const canSeePay = userRole === 'admin';
   const [view, setView] = useState('list'); // list | add | detail | broadcast
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +139,7 @@ export default function ManageUsersModal({ visible, onClose, session }) {
           can_drive_manual: form.can_drive_manual,
           willing_to_fly: form.willing_to_fly,
           drivers_license_number: form.drivers_license_number || null,
+          hourly_wage: form.hourly_wage ? Number(form.hourly_wage) : null,
           ...(licensePhotoUrl && { drivers_license_photo_url: licensePhotoUrl }),
         })
         .eq('id', newUserId);
@@ -216,6 +219,7 @@ export default function ManageUsersModal({ visible, onClose, session }) {
         can_drive_manual: editForm.can_drive_manual ?? false,
         willing_to_fly: editForm.willing_to_fly ?? false,
         drivers_license_number: editForm.drivers_license_number || null,
+        hourly_wage: editForm.hourly_wage ? Number(editForm.hourly_wage) : null,
       };
 
       // Upload new license photo if picked
@@ -365,16 +369,18 @@ export default function ManageUsersModal({ visible, onClose, session }) {
 
     return (
       <ScrollView style={s.scrollArea} contentContainerStyle={s.scrollContent}>
-        <TouchableOpacity
-          style={s.createBtn}
-          onPress={() => {
-            setForm(EMPTY_FORM);
-            setLicenseImage(null);
-            setView('add');
-          }}
-        >
-          <Text style={s.createBtnText}>+ CREATE USER</Text>
-        </TouchableOpacity>
+        {canSeePay && (
+          <TouchableOpacity
+            style={s.createBtn}
+            onPress={() => {
+              setForm(EMPTY_FORM);
+              setLicenseImage(null);
+              setView('add');
+            }}
+          >
+            <Text style={s.createBtnText}>+ CREATE USER</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={s.broadcastBtn}
@@ -480,7 +486,7 @@ export default function ManageUsersModal({ visible, onClose, session }) {
 
           <Text style={s.fieldLabel}>ROLE *</Text>
           <View style={s.roleRow}>
-            {['driver', 'admin', 'caller'].map((r) => (
+            {['driver', 'manager', 'caller', ...(canSeePay ? ['admin'] : [])].map((r) => (
               <TouchableOpacity
                 key={r}
                 style={[s.rolePick, form.role === r && s.rolePickActive]}
@@ -531,6 +537,20 @@ export default function ManageUsersModal({ visible, onClose, session }) {
               thumbColor="#fff"
             />
           </View>
+
+          {canSeePay && (
+            <>
+              <Text style={s.fieldLabel}>HOURLY WAGE ($)</Text>
+              <TextInput
+                style={s.textInput}
+                value={form.hourly_wage}
+                onChangeText={(v) => setForm({ ...form, hourly_wage: v })}
+                placeholder="0.00"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+              />
+            </>
+          )}
 
           <Text style={s.fieldLabel}>DRIVER'S LICENSE PHOTO</Text>
           <TouchableOpacity
@@ -675,6 +695,20 @@ export default function ManageUsersModal({ visible, onClose, session }) {
               />
             </View>
 
+            {canSeePay && (
+              <>
+                <Text style={s.fieldLabel}>HOURLY WAGE ($)</Text>
+                <TextInput
+                  style={s.textInput}
+                  value={String(editForm.hourly_wage ?? '')}
+                  onChangeText={(v) => setEditForm({ ...editForm, hourly_wage: v })}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                />
+              </>
+            )}
+
             <Text style={s.fieldLabel}>DRIVER'S LICENSE PHOTO</Text>
             <TouchableOpacity
               style={s.photoBtn}
@@ -729,6 +763,7 @@ export default function ManageUsersModal({ visible, onClose, session }) {
           <DetailRow label="LICENSE #" value={u.drivers_license_number} />
           <DetailRow label="MANUAL TRANS" value={u.can_drive_manual ? 'Yes' : 'No'} />
           <DetailRow label="WILLING TO FLY" value={u.willing_to_fly ? 'Yes' : 'No'} />
+          {canSeePay && <DetailRow label="HOURLY WAGE" value={u.hourly_wage ? `$${Number(u.hourly_wage).toFixed(2)}/hr` : 'Not set'} />}
         </View>
 
         {u.drivers_license_photo_url && (
@@ -739,6 +774,7 @@ export default function ManageUsersModal({ visible, onClose, session }) {
         )}
 
         <View style={s.detailActions}>
+          {canSeePay && (
           <TouchableOpacity
             style={s.editBtn}
             onPress={() => {
@@ -747,6 +783,7 @@ export default function ManageUsersModal({ visible, onClose, session }) {
                 can_drive_manual: u.can_drive_manual ?? false,
                 willing_to_fly: u.willing_to_fly ?? false,
                 drivers_license_number: u.drivers_license_number || '',
+                hourly_wage: u.hourly_wage ?? '',
                 newLicenseImage: null,
               });
               setEditing(true);
@@ -754,12 +791,15 @@ export default function ManageUsersModal({ visible, onClose, session }) {
           >
             <Text style={s.editBtnText}>EDIT</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={s.deleteBtn}
-            onPress={() => handleDelete(u)}
-          >
-            <Text style={s.deleteBtnText}>DELETE USER</Text>
-          </TouchableOpacity>
+          )}
+          {canSeePay && (
+            <TouchableOpacity
+              style={s.deleteBtn}
+              onPress={() => handleDelete(u)}
+            >
+              <Text style={s.deleteBtnText}>DELETE USER</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={{ height: spacing.xxxxl }} />
