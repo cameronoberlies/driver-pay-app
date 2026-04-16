@@ -197,6 +197,13 @@ export default function LogEntryScreen({ userRole }) {
 
   useEffect(() => { load(); }, []);
 
+  const [chaseVehicles, setChaseVehicles] = useState([]);
+  useEffect(() => {
+    supabase.from('chase_vehicles').select('*').eq('status', 'active').order('stock_number').then(({ data }) => {
+      setChaseVehicles(data || []);
+    });
+  }, []);
+
   function handlePendingComplete(updated) {
     setPending(prev => prev.filter(e => e.id !== updated.id));
   }
@@ -390,8 +397,26 @@ export default function LogEntryScreen({ userRole }) {
 
       {form.trip_type === 'drive' && (
         <>
-          <Text style={s.label}>CHASE VEHICLE STOCK #</Text>
-          <TextInput style={s.input} value={form.chase_vehicle_stock} onChangeText={v => set('chase_vehicle_stock', v)} placeholder="STK-001" placeholderTextColor={colors.textMuted} />
+          <Text style={s.label}>CHASE VEHICLE</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.xs }}>
+            <TouchableOpacity
+              style={[s.pill, !form.chase_vehicle_stock && s.pillActive]}
+              onPress={() => set('chase_vehicle_stock', '')}
+            >
+              <Text style={[s.pillText, !form.chase_vehicle_stock && s.pillTextActive]}>— None —</Text>
+            </TouchableOpacity>
+            {chaseVehicles.map((v) => (
+              <TouchableOpacity
+                key={v.id}
+                style={[s.pill, form.chase_vehicle_stock === v.stock_number && s.pillActive]}
+                onPress={() => set('chase_vehicle_stock', v.stock_number)}
+              >
+                <Text style={[s.pillText, form.chase_vehicle_stock === v.stock_number && s.pillTextActive]}>
+                  {v.stock_number} · {v.year} {v.make} {v.model}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </>
       )}
 

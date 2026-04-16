@@ -1028,6 +1028,13 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
   const [error, setError] = useState('');
   const [addressSuggestions, setAddressSuggestions] = useState([]);
   const addressTimeoutRef = React.useRef(null);
+  const [chaseVehicles, setChaseVehicles] = useState([]);
+
+  useEffect(() => {
+    supabase.from('chase_vehicles').select('*').eq('status', 'active').order('stock_number').then(({ data }) => {
+      setChaseVehicles(data || []);
+    });
+  }, []);
 
   // Date picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -1399,14 +1406,26 @@ function CreateTripView({ drivers, onBack, onCreated, allTrips, availability }) 
 
         {form.trip_type === 'drive' && (
           <View style={s.field}>
-            <Text style={s.label}>Chase Vehicle Stock #</Text>
-            <TextInput
-              style={s.input}
-              placeholder="STK-001"
-              placeholderTextColor={colors.textTertiary}
-              value={form.chase_vehicle_stock}
-              onChangeText={(text) => set('chase_vehicle_stock', text)}
-            />
+            <Text style={s.label}>Chase Vehicle</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[s.driverPill, !form.chase_vehicle_stock && s.driverPillActive]}
+                onPress={() => set('chase_vehicle_stock', '')}
+              >
+                <Text style={[s.driverPillText, !form.chase_vehicle_stock && s.driverPillTextActive]}>— None —</Text>
+              </TouchableOpacity>
+              {chaseVehicles.map((v) => (
+                <TouchableOpacity
+                  key={v.id}
+                  style={[s.driverPill, form.chase_vehicle_stock === v.stock_number && s.driverPillActive]}
+                  onPress={() => set('chase_vehicle_stock', v.stock_number)}
+                >
+                  <Text style={[s.driverPillText, form.chase_vehicle_stock === v.stock_number && s.driverPillTextActive]}>
+                    {v.stock_number} · {v.year} {v.make} {v.model}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         )}
 

@@ -18,18 +18,26 @@ export default function LiveDriversScreen() {
   const webviewRef = useRef(null);
 
   async function load() {
-    const [{ data: locs }, { data: profs }, { data: activeStops }] = await Promise.all([
+    const [{ data: locs }, { data: profs }, { data: activeStops }, { data: activeTrips }] = await Promise.all([
       supabase.from('driver_locations').select('*'),
       supabase.from('profiles').select('*').eq('role', 'driver'),
       supabase.from('trip_stops').select('*').is('ended_at', null),
+      supabase.from('trips').select('driver_id, second_driver_id').eq('status', 'in_progress'),
     ]);
-    setLocations(locs ?? []);
+
+    // Only show drivers who have an active trip
+    const activeDriverIds = new Set(
+      (activeTrips ?? []).flatMap(t => [t.driver_id, t.second_driver_id].filter(Boolean))
+    );
+    const filteredLocs = (locs ?? []).filter(l => activeDriverIds.has(l.driver_id));
+
+    setLocations(filteredLocs);
     setProfiles(profs ?? []);
     setLoading(false);
     setLastRefresh(new Date());
 
     // Build enriched location data with driver names and stop info
-    const enriched = (locs ?? []).map(loc => {
+    const enriched = filteredLocs.map(loc => {
       const prof = (profs ?? []).find(p => p.id === loc.driver_id);
       const stop = (activeStops ?? []).find(s => s.driver_id === loc.driver_id);
       return {
@@ -126,13 +134,24 @@ export default function LiveDriversScreen() {
 
       var ageLabel = age < 60000 ? Math.round(age/1000) + 's ago' : age < 3600000 ? Math.round(age/60000) + 'm ago' : Math.round(age/3600000) + 'h ago';
 
-      // Distance from dealership
-      var dLat = (loc.latitude - 35.270367) * Math.PI / 180;
-      var dLon = (loc.longitude - (-81.496247)) * Math.PI / 180;
-      var a2 = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(35.270367 * Math.PI / 180) * Math.cos(loc.latitude * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-      var distMi = 3958.8 * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2));
-      var etaHrs = distMi / 60;
-      var etaLabel = distMi < 5 ? 'At the dealership' : etaHrs < 1 ? '~' + Math.round(distMi) + ' mi out, ~' + Math.round(etaHrs * 60) + ' min' : '~' + Math.round(distMi) + ' mi out, ~' + etaHrs.toFixed(1) + ' hrs';
+      // Use real ETA from Google Distance Matrix if available, fall back to straight-line
+      var etaLabel;
+      if (loc.eta_miles != null && loc.eta_minutes != null) {
+        if (loc.eta_miles < 5) {
+          etaLabel = 'At the dealership';
+        } else {
+          var hrs = loc.eta_minutes / 60;
+          etaLabel = hrs < 1
+            ? '~' + loc.eta_miles + ' mi, ~' + loc.eta_minutes + ' min'
+            : '~' + loc.eta_miles + ' mi, ~' + hrs.toFixed(1) + ' hrs';
+        }
+      } else {
+        var dLat = (loc.latitude - 35.270367) * Math.PI / 180;
+        var dLon = (loc.longitude - (-81.496247)) * Math.PI / 180;
+        var a2 = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(35.270367 * Math.PI / 180) * Math.cos(loc.latitude * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+        var distMi = 3958.8 * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2));
+        etaLabel = distMi < 5 ? 'At the dealership' : '~' + Math.round(distMi) + ' mi out';
+      }
 
       var popupContent = '<div style="font-size:13px;font-weight:800;color:#fff;">' + (loc.name || 'Unknown') + '</div>' +
         '<div style="font-size:10px;color:#6b7585;">LAST UPDATE</div>' +

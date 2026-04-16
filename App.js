@@ -393,6 +393,12 @@ export default function App() {
               } catch {}
             }
 
+            // Re-check push notification permission on foreground resume
+            // (driver may have just enabled notifications in Settings)
+            if (session?.user?.id) {
+              registerForPushNotifications(session.user.id);
+            }
+
             // Only re-register geofence if the task is truly gone
             // IMPORTANT: Do NOT re-register if already active — re-registration
             // resets iOS geofence state and causes enter events to stop firing

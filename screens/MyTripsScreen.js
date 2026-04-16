@@ -4,6 +4,7 @@ import {
   TouchableOpacity, ActivityIndicator, Alert, RefreshControl, AppState, Linking,
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 
@@ -104,7 +105,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     const storedOver80 = parsed.secondsOver80;
     const storedOver90 = parsed.secondsOver90;
     const storedSpeedTime = parsed.lastSpeedTime;
-    let bgStopStart = parsed.currentStopStart;
+    // Stop detection handled server-side
 
     // FIX: Get session from Supabase v2 storage key
     const STORAGE_KEY = 'sb-yincjogkjvotupzgetqg-auth-token';
@@ -214,46 +215,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
       if (speedMph > 90) secondsOver90 += elapsed;
     }
 
-    // Stop tracking (under 5 mph = stopped) — writes to trip_stops table in real-time
-    let bgStopId = parsed.currentStopId;
-    if (speedMph < 5) {
-      if (!bgStopStart) {
-        bgStopStart = speedNow;
-      } else if (!bgStopId && (speedNow - bgStopStart) >= 5 * 60 * 1000) {
-        // Check for existing unclosed stop before creating a new one
-        const { data: existingBgStop } = await client.from('trip_stops')
-          .select('id')
-          .eq('trip_id', tripId)
-          .eq('driver_id', userId)
-          .is('ended_at', null)
-          .limit(1)
-          .single();
-        if (existingBgStop) {
-          bgStopId = existingBgStop.id;
-        } else {
-          const { data: stopRow } = await client.from('trip_stops').insert({
-            trip_id: tripId,
-            driver_id: userId,
-            latitude,
-            longitude,
-            started_at: new Date(bgStopStart).toISOString(),
-          }).select('id').single();
-          if (stopRow) bgStopId = stopRow.id;
-        }
-      }
-    } else if (bgStopStart) {
-      if (bgStopId) {
-        const stopDuration = Math.round((speedNow - bgStopStart) / 60000);
-        const { error: bgStopErr } = await client.from('trip_stops').update({
-          ended_at: new Date().toISOString(),
-          duration_minutes: stopDuration,
-        }).eq('id', bgStopId);
-        if (bgStopErr) console.log('[BG Task] Stop end failed:', bgStopErr.message);
-        else console.log('[BG Task] Stop ended:', bgStopId, stopDuration + 'min');
-      }
-      bgStopId = null;
-      bgStopStart = null;
-    }
+    // Stop detection is handled server-side via cron — no client-side stop logic
 
     // Write to database
     const { error: dbError } = await client.from('driver_locations').upsert({
@@ -280,8 +242,6 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
       secondsOver80,
       secondsOver90,
       lastSpeedTime: speedNow,
-      currentStopId: bgStopId,
-      currentStopStart: bgStopStart,
     }));
 
   } catch (e) {
@@ -744,6 +704,19 @@ export default function MyTripsScreen({ session, navigation }) {
       Alert.alert('Background Location Required', 'Please allow "Always" location access in Settings so the app can track miles when your screen is locked.', [{ text: 'OK' }]);
       return false;
     }
+    // Block trip start if notifications are disabled
+    const { status: notifStatus } = await Notifications.getPermissionsAsync();
+    if (notifStatus !== 'granted') {
+      Alert.alert(
+        'Notifications Required',
+        'Push notifications must be enabled to start a trip. Please enable them in your device Settings.',
+        [
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return false;
+    }
     return true;
   };
 
@@ -876,8 +849,6 @@ export default function MyTripsScreen({ session, navigation }) {
       secondsOver80: 0,
       secondsOver90: 0,
       lastSpeedTime: null,
-      currentStopId: null,
-      currentStopStart: null,
       tripType: trip.trip_type,
       mileageStartTime,
     }));
@@ -942,48 +913,7 @@ export default function MyTripsScreen({ session, navigation }) {
             if (speedMph > 90) secondsOver90 += elapsed;
           }
 
-          // Stop tracking (under 5 mph = stopped) — writes to trip_stops table in real-time
-          let currentStopId = tripData.currentStopId;
-          let currentStopStart = tripData.currentStopStart;
-
-          if (speedMph < 5) {
-            if (!currentStopStart) {
-              currentStopStart = now;
-            } else if (!currentStopId && (now - currentStopStart) >= 5 * 60 * 1000) {
-              // Check for existing unclosed stop before creating a new one
-              const { data: existingStop } = await supabase.from('trip_stops')
-                .select('id')
-                .eq('trip_id', tripData.tripId)
-                .eq('driver_id', session.user.id)
-                .is('ended_at', null)
-                .limit(1)
-                .single();
-              if (existingStop) {
-                currentStopId = existingStop.id;
-              } else {
-                const { data: stopRow } = await supabase.from('trip_stops').insert({
-                  trip_id: tripData.tripId,
-                  driver_id: session.user.id,
-                  latitude,
-                  longitude,
-                  started_at: new Date(currentStopStart).toISOString(),
-                }).select('id').single();
-                if (stopRow) currentStopId = stopRow.id;
-              }
-            }
-          } else if (currentStopStart) {
-            // Movement resumed — end the stop
-            if (currentStopId) {
-              const stopDuration = Math.round((now - currentStopStart) / 60000);
-              const { error: stopEndErr } = await supabase.from('trip_stops').update({
-                ended_at: new Date().toISOString(),
-                duration_minutes: stopDuration,
-              }).eq('id', currentStopId);
-              if (stopEndErr) console.log('[Stop] End failed:', stopEndErr.message);
-            }
-            currentStopId = null;
-            currentStopStart = null;
-          }
+          // Stop detection is handled server-side via cron — no client-side stop logic
 
           await AsyncStorage.setItem('activeTrip', JSON.stringify({
             ...tripData,
@@ -994,8 +924,6 @@ export default function MyTripsScreen({ session, navigation }) {
             secondsOver80,
             secondsOver90,
             lastSpeedTime: now,
-            currentStopId,
-            currentStopStart,
           }));
 
           // Update UI with new miles
@@ -1074,8 +1002,6 @@ export default function MyTripsScreen({ session, navigation }) {
         ...parsed,
         paused: true,
         pausedAt: Date.now(),
-        currentStopId: null,
-        currentStopStart: null,
       }));
     }
     setActiveTrip(prev => prev ? { ...prev, paused: true } : prev);
@@ -1176,43 +1102,11 @@ export default function MyTripsScreen({ session, navigation }) {
             if (speedMph > 90) secondsOver90 += elapsed;
           }
 
-          let currentStopId = tripData.currentStopId;
-          let currentStopStart = tripData.currentStopStart;
-          if (speedMph < 5) {
-            if (!currentStopStart) currentStopStart = now;
-            else if (!currentStopId && (now - currentStopStart) >= 5 * 60 * 1000) {
-              const { data: existingResumeStop } = await supabase.from('trip_stops')
-                .select('id')
-                .eq('trip_id', tripData.tripId)
-                .eq('driver_id', session.user.id)
-                .is('ended_at', null)
-                .limit(1)
-                .single();
-              if (existingResumeStop) {
-                currentStopId = existingResumeStop.id;
-              } else {
-                const { data: stopRow } = await supabase.from('trip_stops').insert({
-                  trip_id: tripData.tripId, driver_id: session.user.id,
-                  latitude, longitude, started_at: new Date(currentStopStart).toISOString(),
-                }).select('id').single();
-                if (stopRow) currentStopId = stopRow.id;
-              }
-            }
-          } else if (currentStopStart) {
-            if (currentStopId) {
-              await supabase.from('trip_stops').update({
-                ended_at: new Date().toISOString(),
-                duration_minutes: Math.round((now - currentStopStart) / 60000),
-              }).eq('id', currentStopId);
-            }
-            currentStopId = null;
-            currentStopStart = null;
-          }
+          // Stop detection handled server-side
 
           await AsyncStorage.setItem('activeTrip', JSON.stringify({
             ...tripData, lastLat: latitude, lastLon: longitude, miles: newMiles,
             topSpeed, secondsOver80, secondsOver90, lastSpeedTime: now,
-            currentStopId, currentStopStart,
           }));
           setActiveTrip(prev => prev ? { ...prev, miles: newMiles, stale: false, lastGps: Date.now() } : prev);
         } catch {}

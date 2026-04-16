@@ -15,7 +15,7 @@ export default function FleetScreen() {
   const [view, setView] = useState('list'); // list | add | detail
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [mileageLog, setMileageLog] = useState([]);
-  const [form, setForm] = useState({ stock_number: '', vin: '', year: '', make: '', model: '', current_mileage: '', notes: '' });
+  const [form, setForm] = useState({ stock_number: '', vin: '', year: '', make: '', model: '', current_mileage: '', notes: '', oil_change_due_mileage: '' });
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +39,7 @@ export default function FleetScreen() {
   }
 
   function resetForm() {
-    setForm({ stock_number: '', vin: '', year: '', make: '', model: '', current_mileage: '', notes: '' });
+    setForm({ stock_number: '', vin: '', year: '', make: '', model: '', current_mileage: '', notes: '', oil_change_due_mileage: '' });
     setError('');
   }
 
@@ -56,6 +56,7 @@ export default function FleetScreen() {
       model: form.model || null,
       current_mileage: form.current_mileage ? Number(form.current_mileage) : 0,
       notes: form.notes || null,
+      oil_change_due_mileage: form.oil_change_due_mileage ? Number(form.oil_change_due_mileage) : null,
       updated_at: new Date().toISOString(),
     };
 
@@ -126,6 +127,9 @@ export default function FleetScreen() {
         <Text style={s.label}>CURRENT MILEAGE</Text>
         <TextInput style={s.input} value={form.current_mileage} onChangeText={(v) => setForm({ ...form, current_mileage: v })} keyboardType="decimal-pad" placeholder="45000" placeholderTextColor={colors.textMuted} />
 
+        <Text style={s.label}>OIL CHANGE DUE AT (MILES)</Text>
+        <TextInput style={s.input} value={form.oil_change_due_mileage} onChangeText={(v) => setForm({ ...form, oil_change_due_mileage: v })} keyboardType="decimal-pad" placeholder="9941" placeholderTextColor={colors.textMuted} />
+
         <Text style={s.label}>NOTES</Text>
         <TextInput style={[s.input, { height: 60 }]} value={form.notes} onChangeText={(v) => setForm({ ...form, notes: v })} placeholder="Any notes..." placeholderTextColor={colors.textMuted} multiline />
 
@@ -155,6 +159,15 @@ export default function FleetScreen() {
           <Text style={s.detailStock}>Stock: {v.stock_number}</Text>
           {v.vin && <Text style={s.detailMeta}>VIN: {v.vin}</Text>}
           <Text style={s.detailMileage}>{Number(v.current_mileage || 0).toLocaleString()} mi</Text>
+          {v.oil_change_due_mileage && (() => {
+            const due = Number(v.oil_change_due_mileage);
+            const current = Number(v.current_mileage || 0);
+            const remaining = due - current;
+            const overdue = remaining <= 0;
+            return <Text style={[s.detailMeta, overdue && { color: colors.error }]}>
+              Oil Change Due: {due.toLocaleString()} mi {overdue ? '(OVERDUE)' : `(${remaining.toLocaleString()} mi remaining)`}
+            </Text>;
+          })()}
           <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
             {['active', 'inactive', 'sold'].map((st) => (
               <TouchableOpacity
@@ -178,6 +191,7 @@ export default function FleetScreen() {
               model: v.model || '',
               current_mileage: v.current_mileage ? String(v.current_mileage) : '',
               notes: v.notes || '',
+              oil_change_due_mileage: v.oil_change_due_mileage ? String(v.oil_change_due_mileage) : '',
             });
             setEditing(true);
             setView('add');
