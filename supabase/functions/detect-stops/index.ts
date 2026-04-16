@@ -241,52 +241,21 @@ Deno.serve(async (req) => {
         // No open stop — check if driver has been stationary
         // We consider them stationary if their location hasn't updated significantly
         // and the last update was recent (meaning app is alive but not moving)
-        if (locAge < 3) {
-          // Location is fresh — check if they've been at roughly the same spot
-          // Look at the location's updated_at vs trip start to avoid creating stops too early
-          const tripStart = activeTrips.find(t => t.id === trip.id)
-
-          // Check previous location by looking at a recent stop that was just closed
-          // or use a simpler heuristic: if the driver hasn't moved in the last few checks,
-          // we detect it by storing the previous location check
-
-          // Simple approach: check if there are recent location entries that are close together
-          // We'll use the driver_locations table which only has the latest position
-          // So we need a different signal — use the trip_stops "last_check" approach
-
-          // For now: if location is fresh (< 3 min old), check if we've seen this position before
-          // by looking for recent closed stops nearby (within 100m, closed in last 2 min)
-          // If found, they're bouncing — don't create a new stop
-
-          // Simpler: just check if location hasn't changed much by storing a "last_position" cache
-          // But we don't have that in this stateless function
-
-          // Simplest reliable approach: use a separate table or just check based on time
-          // If the driver's location timestamp is recent but they've been at the same spot
-          // for 5+ minutes, we know from the absence of movement
-
-          // Actually, the best approach: store the first-seen timestamp for the current position
-          // We can do this by checking: is there a recent (< 10 min) closed stop at this same location?
-          // If yes, they just moved slightly and came back — skip
-          // If no, check if there's been no stop in the last 5+ minutes AND location is fresh
-
-          // Let's keep it simple for now:
-          // We'll create a stop if the driver has had a fresh location for 5+ consecutive minutes
-          // without an existing stop. Since this cron runs every 2 minutes, after 3 consecutive
-          // runs seeing the same driver at roughly the same spot, we create a stop.
-
-          // To track "consecutive sightings", we'll use system_logs with a lightweight entry
+        // Track consecutive sightings at the same position via system_logs
+        {
           const { data: recentCheck } = await supabase
             .from('system_logs')
             .select('metadata')
             .eq('event', 'stop_check')
             .eq('source', 'detect-stops')
-            .gte('created_at', new Date(Date.now() - 6 * 60 * 1000).toISOString())
-            .contains('metadata', { driver_id: loc.driver_id })
+            .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString())
             .order('created_at', { ascending: false })
-            .limit(1)
+            .limit(50)
 
-          const prevCheck = recentCheck?.[0]?.metadata as any
+          // Find the most recent check for THIS driver
+          const prevCheck = (recentCheck || []).find(
+            (r: any) => r.metadata?.driver_id === loc.driver_id
+          )?.metadata as any
 
           if (prevCheck) {
             const prevLat = prevCheck.latitude
