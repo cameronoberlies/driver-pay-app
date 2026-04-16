@@ -168,6 +168,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     // For fly trips, mileage starts at scheduled pickup time
     const bgMileageActive = !parsed.mileageStartTime || Date.now() >= parsed.mileageStartTime;
 
+    const speedNow = Date.now();
     let newMiles = miles;
     if (bgMileageActive && lastLat && lastLon) {
       // Calculate distance using Haversine formula
@@ -179,11 +180,13 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
                 Math.sin(dLon/2) * Math.sin(dLon/2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       const distance = R * c;
-      newMiles += distance;
+      // Reject GPS teleport glitches — cap at 100mph implied speed between updates
+      const secsSinceLast = storedSpeedTime ? (speedNow - storedSpeedTime) / 1000 : 10;
+      const maxMiles = (100 / 3600) * Math.max(secsSinceLast, 10);
+      if (distance < maxMiles) newMiles += distance;
     }
 
     // Speed tracking (rawSpeed is m/s, convert to mph)
-    const speedNow = Date.now();
     // Fallback: calculate speed from distance if GPS speed unavailable (-1)
     let speedMph = 0;
     if (rawSpeed != null && rawSpeed >= 0) {
@@ -881,12 +884,16 @@ export default function MyTripsScreen({ session, navigation }) {
           // For fly trips, mileage starts at scheduled pickup time
           const mileageActive = !tripData.mileageStartTime || Date.now() >= tripData.mileageStartTime;
 
+          const now = Date.now();
           if (mileageActive && tripData.lastLat && tripData.lastLon) {
-            newMiles += getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+            const delta = getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+            // Reject GPS teleport glitches — cap at 100mph implied speed between updates
+            const secsSinceLast = tripData.lastSpeedTime ? (now - tripData.lastSpeedTime) / 1000 : 10;
+            const maxMiles = (100 / 3600) * Math.max(secsSinceLast, 10);
+            if (delta < maxMiles) newMiles += delta;
           }
 
           // Speed tracking (rawSpeed is m/s, convert to mph)
-          const now = Date.now();
           // Fallback: calculate speed from distance if GPS speed unavailable (-1)
           let speedMph = 0;
           if (rawSpeed != null && rawSpeed >= 0) {
