@@ -10,6 +10,8 @@ import { getDistanceMiles, formatDuration, formatTimeET } from '../lib/utils';
 import { logEvent } from '../lib/systemLog';
 import { colors, spacing, radius, typography, components } from '../lib/theme';
 import useResponsive from '../lib/useResponsive';
+import OBDStatusCard from '../components/OBDStatusCard';
+import { obdBLE, obdData, mockOBD } from '../lib/obd2';
 
 const LOCATION_TASK = 'background-location-task';
 const TIMEOUT_MS = 8000;
@@ -281,6 +283,8 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, acti
         </View>
       )}
 
+      {isActive && <OBDStatusCard trip={trip} />}
+
       {canStart && (
         <TouchableOpacity style={s.startBtn} onPress={() => onStart(trip)}>
           <Text style={s.startBtnText}>▶ START TRIP</Text>
@@ -538,6 +542,25 @@ export default function MyTripsScreen({ session, navigation }) {
 
     notifyTripStatus(trip.id, 'started');
 
+    // Initialize OBD — try real BLE first, fall back to mock for testing
+    try {
+      const bleReady = await obdBLE.init();
+      if (bleReady) {
+        const devices = await obdBLE.scan(8000);
+        if (devices.length > 0) {
+          await obdBLE.connect(devices[0].id);
+          obdData.startRecording();
+        }
+      }
+      // If no real device found and __DEV__, start mock for UI testing
+      if (!obdBLE.isConnected() && __DEV__) {
+        console.log('[OBD] No device found — starting mock in dev mode');
+        await mockOBD.start();
+      }
+    } catch (e) {
+      console.log('[OBD] Init error (non-fatal):', e.message);
+    }
+
     const startTime = Date.now();
     startTimeRef.current = startTime;
 
@@ -584,13 +607,21 @@ export default function MyTripsScreen({ session, navigation }) {
       async (loc) => {
         const { latitude, longitude, speed: rawSpeed } = loc.coords;
 
-        // Push live location to DB for admin Live Drivers view
-        await supabase.from('driver_locations').upsert({
+        // Push live location + OBD data to DB for admin Live Drivers view
+        const locUpdate = {
           driver_id: session.user.id,
           latitude,
           longitude,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'driver_id' });
+        };
+        // Include live OBD readings if connected
+        if (obdBLE.isConnected()) {
+          const snap = obdData.getSnapshot();
+          if (snap.speed != null) locUpdate.obd_speed = snap.speed;
+          if (snap.rpm != null) locUpdate.obd_rpm = snap.rpm;
+          if (snap.fuelLevel != null) locUpdate.obd_fuel = snap.fuelLevel;
+        }
+        await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
 
         // Accumulate miles and speed data in AsyncStorage
         try {
@@ -944,6 +975,19 @@ export default function MyTripsScreen({ session, navigation }) {
               }
             } catch {}
 
+            // Stop OBD recording and collect summary
+            let obdSummary = null;
+            try {
+              if (mockOBD.isRunning()) {
+                obdSummary = mockOBD.stop();
+              } else if (obdData.isRecording) {
+                obdSummary = obdData.stopRecording();
+              }
+              await obdBLE.disconnect();
+            } catch (e) {
+              console.log('[OBD] Stop error (non-fatal):', e.message);
+            }
+
             await AsyncStorage.removeItem('activeTrip');
 
             const tripUpdate = {
@@ -953,6 +997,7 @@ export default function MyTripsScreen({ session, navigation }) {
               hours: finalDriveTime,
             };
             if (speedData) tripUpdate.speed_data = speedData;
+            if (obdSummary) tripUpdate.obd_data = obdSummary;
 
             const { error: err } = await supabase
               .from('trips')

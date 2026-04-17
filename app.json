@@ -23,8 +23,11 @@
         "UIBackgroundModes": [
           "fetch",
           "remote-notification",
-          "location"
+          "location",
+          "bluetooth-central"
         ],
+        "NSBluetoothAlwaysUsageDescription": "Used to connect to OBD2 vehicle diagnostic reader.",
+        "NSBluetoothPeripheralUsageDescription": "Used to connect to OBD2 vehicle diagnostic reader.",
         "NSLocalNetworkUsageDescription": "Required to connect to development server",
         "NSBonjourServices": [
           "_expo._tcp",
@@ -52,7 +55,10 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION"
+        "FOREGROUND_SERVICE_LOCATION",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_ADVERTISE"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0a0a0a",
@@ -76,6 +82,8 @@
     "updates": {
       "url": "https://u.expo.dev/2fa6ed9e-334f-4d4e-83f4-753b40bf843b"
     },
-    "plugins": []
+    "plugins": [
+      "react-native-ble-plx"
+    ]
   }
 }
