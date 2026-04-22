@@ -2,7 +2,7 @@
   "expo": {
     "name": "Discovery Driver Portal",
     "slug": "DriverPayApp2",
-    "version": "1.0.7",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -40,7 +40,7 @@
       ]
     },
     "android": {
-      "package": "com.driverportal.app",
+      "package": "com.cameronoberlies.driverpay",
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION",

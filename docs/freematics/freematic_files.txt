@@ -1,0 +1,249 @@
+Freematics Controller is an Android app for remote controlling and monitoring multiple Freematics products via BLE. Current supported products include:
+
+Freematics OBD-II Emulator
+Freematics ONE
+Freematics ONE+
+Click here to download the APK.
+
+Freematics ONE is an Arduino UNO compatible vehicle telematics prototyping platform, in form of a OBD-II dongle which plugs into a vehicle’s OBD-II port, with ATmega328 as main controller having access to vehicle ECU, GNSS motion sensor through an Arduino library. Freematics ONE is as easy as Arduino for starters.
+
+
+
+
+
+
+Features
+Programmable as Arduino UNO from standard Arduino IDE
+Access to all standard OBD-II PIDs, DTC, VIN from vehicle ECU
+Measuring G-force and motion
+Measuring car battery voltage
+Pinouts for digital and analog I/O
+Data storage on microSD card up to 32GB
+GPS/GLONASS geolocation (with external GPS receiver)
+BLE transparent serial communication (working with Freematics Controller App)
+Low power mode @10mA
+Hardware
+Specifications
+
+ATmega328p main controller
+MPU-9250 MEMS motion sensor
+CC2541 BLE transparent serial module
+Enclosure dimensions: 60x48x20mm
+Physical Interfaces
+
+OBD-II male connector
+microUSB port
+microSD card slot
+I/O socket (for external GNSS receiver)
+xBee socket for communication modules
+OBD-II Compatibility
+
+Freematics ONE plugs into the OBD port usually located under the steering column. To check if your vehicle is OBD-II certified, open your hood and find the sticker that looks like this:
+
+obd_sticker
+
+Vehicles using following vehicle protocols are supported.
+
+CAN 500Kbps/29bit
+CAN 500Kbps/11bit
+CAN 250Kbps/29bit
+CAN 250Kbps/11bit
+KWP2000 Fast
+KWP2000 5Kbps
+GNSS
+
+Freematics ONE supports geo-location positioning by external GPS receiver which is connected to Freematics ONE’s I/O socket by Molex connector.
+
+UBX-M8030 GPS Receiver with Molex connector Freematics ONE GPS Connector F-ONE_3497
+
+GPSConnector
+
+microSD
+
+Freematics ONE has a microSD slot under the side cover. The card reader is connected to ATmega328p through SPI. Standard Arduino SD library is used for microSD card access.
+
+
+
+BLE Module
+
+Freematics ONE has a BLE module (TI CC2541) which allows transparent serial data communication over BLE. It works with Freematics Controller when datalogger sketch uploaded.
+
+
+
+
+Low-Power Mode
+
+Freematics enters and leaves low power mode programmatically. In low power mode with all peripherals (GPS, GSM, WIFI) powered off, the power consumption is around 10mA. This prevents car battery from going flat while the main controller is still able to run code and perform low-power tasks like motion detection by MEMS sensor.
+
+PCB Layout
+
+Following is the PCB layout of Freematics ONE. The schematic is here. We supply head-less (without OBD-II male connector) version. Please contact for details.
+
+
+
+External I/O
+
+Two I/O pins of the ATmega328P (PC0, PC1 or A0, A1 in Arduino context) are led out to at one corner of PCB. They can be used for digital I/O and analog input.
+
+The I/O socket can also be used for digital I/O (3.3V) in the new revision (2021) with newly added API.
+
+Software
+An Arduino sketch can be uploaded to Freematics ONE exactly the same way as for an Arduino UNO from standard Arduino IDE through USB port. Please refer to the Users Guide for more related information.
+
+Pre-loaded Firmware
+
+Datalogger is pre-loaded before shipping, your Freematics ONE will work out-of-box as a vehicle data logger which performs following tasks:
+
+Connecting to vehicle via OBD-II port
+Connecting to GPS receiver (if available)
+Creating a new file on microSD card
+Logging OBD-II, GPS, MEMS sensor data to the file (file format)
+Working with Freematics Controller App via BLE
+
+
+Freematics Packed Data Format is a text based data format used for data transmission to Freematics Hub by UDP or HTTP POST. The stream is chunks of PID/value pairs separated by comma. PID is a hex format (0~FFFF) that identifies the type of data. Value can be integer number, floating number, or consisting of multiple numbers (e.g. accelerometer data). Multiple elements of data are separated by commas.
+
+<PID 1>:<value 1>,<PID 2>:<value 2>,<PID 3>:<value 3 part 1>;<value 3 part 2>;<value 3 part 3>,...
+Standard OBD-II PIDs are used straight. A set of custom PIDs are defined for GPS data, motion sensor data and other data. Following are some commonly used Mode 01 PIDs in OBD-II standard.
+
+0x104 – Engine load
+0x105 – Engine coolant temperature
+0x10a – Fuel pressure
+0x10b – Intake manifold absolute pressure
+0x10c – Engine RPM
+0x10d – Vehicle speed
+0x10e – Timing advance
+0x10f – Intake air temperature
+0x110 – MAF air flow rate
+0x111 – Throttle position
+0x11f – Run time since engine start
+0x121 – Distance traveled with malfunction indicator lamp
+0x12f – Fuel Level Input
+0x131 – Distance traveled since codes cleared
+0x133 – Barometric pressure
+0x142 – Control module voltage
+0x143 – Absolute load value
+0x15b – Hybrid battery pack remaining life
+0x15c – Engine oil temperature
+0x15e – Engine fuel rate
+Custom defined PIDs in mode 0 (0~FF) which OBD-II does not use
+
+0x11 – UTC Date (DDMMYY)
+0x10 – UTC Time (HHMMSSmm)
+0xA – Latitude
+0xB – Longitude
+0xC – Altitude (m)
+0xD – Speed (km/h)
+0xE – Course (degree)
+0xF – Number of satellites in use
+0x20 – Accelerometer data (x:y:z)
+0x21- Gyroscope data (x:y:z)
+0x22 – Magnitude field data (x/y/z)
+0x23 – MEMS temperature (in 0.1 Celsius degree)
+0x24 – Battery voltage (in 0.01V)
+0x25 – Orientation data  (yaw/pitch/roll)
+0x81 – Cellular network signal level (dB)
+0x82 – CPU temperature (in 0.1 Celsius degree)
+0x83 – CPU hall sensor data
+PID 0 is reserved for indication of the timestamp of following data whereas followed value is a 32-bit integer data in milliseconds (usually the device system timer).
+
+Example:
+
+0:68338,10D:79,30:1010,105:199,10C:4375,104:56,111:62,20:0;-1;95,10:6454200,A:-32.727482,B:150.150301,C:159,D:0,F:5,24:1250
+
+
+Freematics ONE is a piece of Arduino compatible open-source hardware in form of a OBD-II dongle. It runs compiled Arduino sketch and works accordingly as a vehicle telematics data collector/logger/transmitter after being plugged into car’s OBD-II port.
+
+The main controller of Freematics ONE is ATmega328p which can be programmed exactly same as Arduino UNO from USB. Standard Arduino libraries can be used unmodified. Enhanced features are provided by a dedicated Arduino library. A STM32 co-processor is connected with ATmega328p working as peripherals data hub (for OBD, GPS and network module) and dealing with protocol decoding (CAN bus, KWP2000, NMEA). A MPU-9250 9-DOF motion sensor is connected with ATmega328p by I2C.
+
+Interfaces and Components
+Freematics ONE has following hardware interfaces and components outside and inside its enclosure:
+
+OBD-II Male Connector (16-pin)
+GPS Connector (4-pin)
+microSD card slot
+Micro SIM card slot (not used for units without cellular module)
+Micro USB Port
+LED Indicator
+xBee Socket (inside)
+BLE Module (inside)
+OBD-II Male Connector
+
+OBD-II male connector allows Freematics ONE to be plugged directly into OBD-II female port which is available in most modern cars. The OBD-II port provides connection between Freematics ONE and car’s ECU computer as well as power supply from car battery.
+
+GPS Connector
+
+GPS socket allows connection of external GPS receivers which come as an optional accessory. The 4-pin Molex connector is used for serial communication and providing power for GPS receiver. Normally OBD-II port sits underneath dashboard where no good GPS signal reception is available. External GPS receiver with a cable led out from Freematics ONE can be easily placed on dashboard or somewhere else for better signal reception.
+
+Freematics ONE GPS Connector UBX-M8030 GPS Receiver with Molex connectorF-ONE_3497
+
+Card Slots
+
+Freematics ONE has a microSD card slot and a micro SIM card slot under the plastic cover on one side of the enclosure. Both card seats are self-popping. Please avoid insert anything into SIM card slot if your Freematics ONE has no cellular module installed. Please make sure to insert microSD card and SIM card in the correct direction as shown below.
+
+F-ONE-TF F-ONE-SIM F-ONE-CARDS
+
+Micro USB Port
+
+Micro USB port is used for Arduino sketch uploading as well as serial communication which is pretty same as for an Arduino board. The port can also be used for powering the device if no OBD-II connection is available.
+
+LED indicator are on when powered on and flashing when there is USB or BLE communication.
+
+xBee Socket
+
+A 2x10pin xBee Socket is set on the PCB. It extends Freematics ONE with cellular network access.
+
+F-ONE_3402
+
+BLE Module
+
+A CC2541 BLE module with onboard antenna is attached on the back of PCB for both BLE communication with mobile devices like iPhone or iPad.
+
+Compiling and Uploading
+As an open-source hardware, the most important thing is being able to compile source code and upload to the unit.
+
+1. Download and install Arduino IDE
+
+If you don’t have it, download Arduino IDE from arduino.cc.
+
+2. Download and import Arduino library
+
+Download source code package for Freematics ONE from here. The package contains Arduino library for Freematics ONE and a bunch of example sketches which you can easily get started with. Having no idea about Arduino library and how to import one? Read this.
+
+arduino_ide_add_library
+
+3. Download Arduino sketches for Freematics ONE and load one of them into Arduino IDE
+
+You can either check out latest sketches from our Github. A couple of ready-to-go sketches for various purposes are available. Most of them are directly available from Arduino IDE examples menu if Freematics ONE library has been imported.
+
+Datalogger
+
+This sketch works as a data logger of OBD-II/GPS/MEMS data. Data is saved on inserted microSD card and streamed to mobile phone or tablet via BLE (in readable text). For the file format used for data logging, please refer to Freematics Data Logging Format.
+
+Telelogger_sim800_udp
+
+This sketch demonstrates how OBD-II/GPS/MEMS data is collected and transmitted to remote server by UDP with SIM800L GSM/GPRS module. SIM800 AT command-set is used for GPRS communication. This sketch works with Freematics ONE with SIM800L module installed.
+
+Telelogger_esp8266
+
+This sketch demonstrates how OBD-II/GPS/MEMS data is collected and transmitted to remote server by UDP with ESP8266 WIFI module ESP8266 command-set is used for WIFI communication. This sketch works with Freematics ONE with ESP8266 module installed.
+
+4. Connect Freematics ONE to computer by USB cable
+
+Just like connecting an Arduino board, connect your Freematics ONE to your computer with supplied USB-to-microUSB cable.
+
+F-ONE_4579
+
+5. Compile and upload the sketch to Freematics ONE
+
+In Arduino IDE, choose Arduino UNO as board and the serial port that Freematics ONE is on. Click upload button or menu to start uploading. Once completed, your Freematics ONE is ready to go with your car.
+
+arduino_ide_board_type arduino_ide_uploading
+
+F-ONE_4584
+
+Useful Links
+Freematics ONE Product Page
+Freematics Packed Data Format
+SIM5360 AT command manual
+SIM800 AT command manual

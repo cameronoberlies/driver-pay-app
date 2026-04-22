@@ -199,9 +199,11 @@ Deno.serve(async (req) => {
 
         // If location is stale (15+ min), auto-close the stop — we lost tracking
         if (locAge > STALE_LOCATION_MINUTES) {
+          const endTime = new Date(loc.updated_at).getTime()
+          const startTime = new Date(openStop.started_at).getTime()
           await supabase.from('trip_stops').update({
             ended_at: new Date(loc.updated_at).toISOString(),
-            duration_minutes: Math.round((new Date(loc.updated_at).getTime() - new Date(openStop.started_at).getTime()) / 60000),
+            duration_minutes: Math.max(0, Math.round((endTime - startTime) / 60000)),
           }).eq('id', openStop.id)
           stopsClosed++
           continue
@@ -212,9 +214,9 @@ Deno.serve(async (req) => {
         )
 
         if (dist > MOVE_THRESHOLD_METERS) {
-          const stopDuration = Math.round(
+          const stopDuration = Math.max(0, Math.round(
             (Date.now() - new Date(openStop.started_at).getTime()) / 60000
-          )
+          ))
           await supabase.from('trip_stops').update({
             ended_at: new Date().toISOString(),
             duration_minutes: stopDuration,
