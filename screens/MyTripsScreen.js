@@ -548,13 +548,11 @@ export default function MyTripsScreen({ session, navigation }) {
       if (bleReady) {
         const devices = await obdBLE.scan(8000);
         if (devices.length > 0) {
-          await obdBLE.connect(devices[0].id);
-          obdData.startRecording();
+          const connected = await obdBLE.connect(devices[0].id);
+          if (connected) obdData.startRecording();
         }
       }
-      // If no real device found and __DEV__, start mock for UI testing
       if (!obdBLE.isConnected() && __DEV__) {
-        console.log('[OBD] No device found — starting mock in dev mode');
         await mockOBD.start();
       }
     } catch (e) {

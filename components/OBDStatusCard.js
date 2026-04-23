@@ -9,26 +9,32 @@ import { obdBLE, obdData, BLE_STATE, formatVehicle } from '../lib/obd2';
 
 export default function OBDStatusCard({ trip, compact = false }) {
   const [data, setData] = useState(obdData.getSnapshot());
+  const [bleState, setBleState] = useState(obdBLE.getState());
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    const unsub = obdData.onUpdate(setData);
-    return unsub;
+    const unsubData = obdData.onUpdate(setData);
+    const unsubBLE = obdBLE.onStateChange((state) => {
+      setBleState(state);
+      setData(obdData.getSnapshot());
+    });
+    return () => { unsubData(); unsubBLE(); };
   }, []);
 
-  // Don't render if OBD is not available
-  if (!obdBLE.isAvailable() && !data.connected) return null;
+  // Don't render if OBD is not available at all
+  if (!obdBLE.isAvailable()) return null;
 
   const connected = data.connected;
+  const isConnecting = bleState === BLE_STATE.SCANNING || bleState === BLE_STATE.CONNECTING || bleState === BLE_STATE.INITIALIZING;
   const vehicle = trip?.obd_data?.vehicle;
 
   if (compact) {
     // Minimal indicator for trip card
     return (
       <View style={s.compactRow}>
-        <View style={[s.statusDot, connected ? s.dotConnected : s.dotDisconnected]} />
+        <View style={[s.statusDot, connected ? s.dotConnected : isConnecting ? s.dotConnecting : s.dotDisconnected]} />
         <Text style={[s.compactText, connected && s.compactTextConnected]}>
-          {connected ? 'OBD' : 'OBD OFF'}
+          {connected ? 'OBD' : isConnecting ? 'CONNECTING...' : 'OBD OFF'}
         </Text>
         {connected && data.speed != null && (
           <Text style={s.compactMetric}>{data.speed} mph</Text>
@@ -56,9 +62,9 @@ export default function OBDStatusCard({ trip, compact = false }) {
       {/* Connection Status + Key Metrics */}
       <View style={s.statusRow}>
         <View style={s.statusLeft}>
-          <View style={[s.statusDot, connected ? s.dotConnected : s.dotDisconnected]} />
-          <Text style={[s.statusText, connected ? s.statusConnected : s.statusDisconnected]}>
-            {connected ? 'OBD CONNECTED' : 'OBD DISCONNECTED'}
+          <View style={[s.statusDot, connected ? s.dotConnected : isConnecting ? s.dotConnecting : s.dotDisconnected]} />
+          <Text style={[s.statusText, connected ? s.statusConnected : isConnecting ? s.statusConnecting : s.statusDisconnected]}>
+            {connected ? 'OBD CONNECTED' : isConnecting ? 'CONNECTING...' : 'OBD DISCONNECTED'}
           </Text>
         </View>
         <Text style={s.expandIcon}>{expanded ? '▲' : '▼'}</Text>
@@ -230,6 +236,13 @@ const s = StyleSheet.create({
   dotDisconnected: {
     backgroundColor: colors.textMuted,
   },
+  dotConnecting: {
+    backgroundColor: colors.warning,
+    shadowColor: colors.warning,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 3,
+  },
   statusText: {
     ...typography.labelSm,
     letterSpacing: 2,
@@ -239,6 +252,9 @@ const s = StyleSheet.create({
   },
   statusDisconnected: {
     color: colors.textMuted,
+  },
+  statusConnecting: {
+    color: colors.warning,
   },
   expandIcon: {
     fontSize: 10,
