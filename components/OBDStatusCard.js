@@ -159,13 +159,19 @@ export default function OBDStatusCard({ trip, compact = false }) {
       )}
 
       {/* Disconnected — show scan button */}
-      {!connected && obdBLE.isAvailable() && (
+      {!connected && !isConnecting && obdBLE.isAvailable() && (
         <TouchableOpacity
           style={s.scanBtn}
           onPress={async () => {
-            const devices = await obdBLE.scan();
+            const bleReady = await obdBLE.init();
+            if (!bleReady) return;
+            const devices = await obdBLE.scan(8000);
             if (devices.length > 0) {
-              await obdBLE.connect(devices[0].id);
+              devices.sort((a, b) => b.rssi - a.rssi);
+              const success = await obdBLE.connect(devices[0].id);
+              if (success && !obdData.isRecording) {
+                obdData.startRecording();
+              }
             }
           }}
         >

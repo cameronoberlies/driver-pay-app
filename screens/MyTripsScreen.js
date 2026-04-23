@@ -227,8 +227,9 @@ function statusLabel(status) {
   return status.toUpperCase();
 }
 
-function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, activeTrip, unreadCount, onChatPress }) {
+function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, onStartTracking, activeTrip, unreadCount, onChatPress }) {
   const isDesignated = trip.designated_driver_id === currentUserId;
+  const isSecondary = trip.second_driver_id === currentUserId;
   const isFlyTrip = trip.trip_type === 'fly';
   const isActive = activeTrip?.id === trip.id;
   const isPaused = isActive && activeTrip.paused;
@@ -237,6 +238,8 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, acti
   const canPause = isDesignated && trip.status === 'in_progress' && isActive && !isPaused;
   const canResume = isDesignated && trip.status === 'in_progress' && isActive && isPaused;
   const waitingForDesignated = !isDesignated && trip.trip_type === 'drive' && trip.status === 'pending';
+  // Driver B can start tracking once the designated driver has started the trip
+  const canStartTracking = isSecondary && !isDesignated && trip.status === 'in_progress' && !isActive;
 
   return (
     <View style={[s.card, { borderLeftColor: statusColor(trip.status) }]}>
@@ -317,6 +320,12 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, acti
         <Text style={s.waitingText}>Waiting for designated driver to start</Text>
       )}
 
+      {canStartTracking && (
+        <TouchableOpacity style={s.trackingBtn} onPress={() => onStartTracking(trip)}>
+          <Text style={s.trackingBtnText}>▶ START TRACKING</Text>
+        </TouchableOpacity>
+      )}
+
       {activeTrip && !isActive && trip.status === 'pending' && (
         <Text style={s.waitingText}>Another trip is currently active</Text>
       )}
@@ -367,16 +376,36 @@ export default function MyTripsScreen({ session, navigation }) {
     } catch {}
   }
 
-  // ── AppState listener to sync miles when foregrounded ────────────────────
+  // ── AppState listener to sync miles and reconnect OBD when foregrounded ──
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
       if (appStateRef.current.match(/inactive|background/) && nextState === 'active') {
         syncMilesFromStorage();
+
+        // Auto-reconnect OBD if there's an active trip but no OBD connection
+        if (activeTrip && !obdBLE.isConnected() && obdBLE.isAvailable()) {
+          try {
+            const bleReady = await obdBLE.init();
+            if (bleReady) {
+              const devices = await obdBLE.scan(8000);
+              if (devices.length > 0) {
+                // Pick strongest signal (closest device)
+                devices.sort((a, b) => b.rssi - a.rssi);
+                const connected = await obdBLE.connect(devices[0].id);
+                if (connected && !obdData.isRecording) {
+                  obdData.startRecording();
+                }
+              }
+            }
+          } catch (e) {
+            console.log('[OBD] Foreground reconnect error (non-fatal):', e.message);
+          }
+        }
       }
       appStateRef.current = nextState;
     });
     return () => sub.remove();
-  }, []);
+  }, [activeTrip]);
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
@@ -481,11 +510,37 @@ export default function MyTripsScreen({ session, navigation }) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'trips' },
-        (payload) => {
+        async (payload) => {
           const row = payload.new || payload.old;
           const userId = session.user.id;
           // Only reload if this trip involves the current driver
           if (row?.driver_id === userId || row?.second_driver_id === userId) {
+            // If trip was completed/finalized and we're the secondary driver tracking, auto-stop
+            if ((row.status === 'completed' || row.status === 'finalized') && activeTrip?.id === row.id) {
+              const stored = await AsyncStorage.getItem('activeTrip');
+              if (stored) {
+                const parsed = JSON.parse(stored);
+                if (parsed.isSecondaryDriver) {
+                  // Stop tracking — Driver A ended the trip
+                  if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
+                  try {
+                    const isTracking = await Location.hasStartedLocationUpdatesAsync('background-location-task');
+                    if (isTracking) await Location.stopLocationUpdatesAsync('background-location-task');
+                  } catch {}
+                  if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+                  // Save OBD data
+                  let obdSummary = null;
+                  try {
+                    if (obdData.isRecording) obdSummary = obdData.stopRecording();
+                    await obdBLE.disconnect();
+                  } catch {}
+                  // Clean up
+                  await supabase.from('driver_locations').delete().eq('driver_id', userId);
+                  await AsyncStorage.removeItem('activeTrip');
+                  setActiveTrip(null);
+                }
+              }
+            }
             load();
           }
         }
@@ -548,6 +603,8 @@ export default function MyTripsScreen({ session, navigation }) {
       if (bleReady) {
         const devices = await obdBLE.scan(8000);
         if (devices.length > 0) {
+          // Pick strongest signal (closest device)
+          devices.sort((a, b) => b.rssi - a.rssi);
           const connected = await obdBLE.connect(devices[0].id);
           if (connected) obdData.startRecording();
         }
@@ -715,6 +772,134 @@ export default function MyTripsScreen({ session, navigation }) {
       activityType: Location.ActivityType.AutomotiveNavigation,
       timeInterval: 10000,
       distanceInterval: 50,
+      foregroundService: {
+        notificationTitle: 'Trip in Progress',
+        notificationBody: 'Discovery Driver Portal is tracking your location.',
+        notificationColor: '#f5a623',
+      },
+      pausesUpdatesAutomatically: false,
+      showsBackgroundLocationIndicator: true,
+    });
+  }
+
+  // ── Start tracking (Driver B) ────────────────────────────────────────────
+  // Secondary driver starts their own GPS + OBD tracking on an in-progress trip
+  // Does NOT change trip status — Driver A controls the trip lifecycle
+  async function handleStartTracking(trip) {
+    const permitted = await requestPermissions();
+    if (!permitted) return;
+
+    const startTime = Date.now();
+    startTimeRef.current = startTime;
+
+    setActiveTrip({ id: trip.id, miles: 0, elapsed: 0 });
+    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t } : t));
+
+    // Start elapsed timer
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setActiveTrip(prev => {
+        if (!prev) return prev;
+        const isStale = prev.lastGps && (Date.now() - prev.lastGps) > 60000;
+        return {
+          ...prev,
+          elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000),
+          stale: isStale,
+        };
+      });
+    }, 1000);
+
+    // Store as active trip in AsyncStorage for background tracking
+    await AsyncStorage.setItem('activeTrip', JSON.stringify({
+      tripId: trip.id,
+      userId: session.user.id,
+      lastLat: null,
+      lastLon: null,
+      miles: 0,
+      startTime,
+      topSpeed: 0,
+      secondsOver80: 0,
+      secondsOver90: 0,
+      lastSpeedTime: null,
+      tripType: trip.trip_type,
+      mileageStartTime: null, // Start tracking immediately
+      isSecondaryDriver: true,
+    }));
+
+    // Initialize OBD
+    try {
+      const bleReady = await obdBLE.init();
+      if (bleReady) {
+        const devices = await obdBLE.scan(8000);
+        if (devices.length > 0) {
+          devices.sort((a, b) => b.rssi - a.rssi);
+          const connected = await obdBLE.connect(devices[0].id);
+          if (connected) obdData.startRecording();
+        }
+      }
+      if (!obdBLE.isConnected() && __DEV__) {
+        await mockOBD.start();
+      }
+    } catch (e) {
+      console.log('[OBD] Init error (non-fatal):', e.message);
+    }
+
+    // Start foreground location watcher
+    if (locationWatcherRef.current) locationWatcherRef.current.remove();
+    locationWatcherRef.current = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 10000, distanceInterval: 0 },
+      async (loc) => {
+        const { latitude, longitude, speed: rawSpeed } = loc.coords;
+
+        // Push live location for admin Live Drivers view
+        const locUpdate = {
+          driver_id: session.user.id,
+          latitude,
+          longitude,
+          updated_at: new Date().toISOString(),
+        };
+        if (obdBLE.isConnected()) {
+          const snap = obdData.getSnapshot();
+          if (snap.speed != null) locUpdate.obd_speed = snap.speed;
+          if (snap.rpm != null) locUpdate.obd_rpm = snap.rpm;
+          if (snap.fuelLevel != null) locUpdate.obd_fuel = snap.fuelLevel;
+        }
+        await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
+
+        // Accumulate miles
+        try {
+          const stored = await AsyncStorage.getItem('activeTrip');
+          if (!stored) return;
+          const tripData = JSON.parse(stored);
+          let newMiles = tripData.miles || 0;
+
+          const now = Date.now();
+          if (tripData.lastLat && tripData.lastLon) {
+            const delta = getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+            const secsSinceLast = tripData.lastSpeedTime ? (now - tripData.lastSpeedTime) / 1000 : 10;
+            const maxMiles = (100 / 3600) * Math.max(secsSinceLast, 10);
+            if (delta < maxMiles) newMiles += delta;
+          }
+
+          await AsyncStorage.setItem('activeTrip', JSON.stringify({
+            ...tripData,
+            lastLat: latitude,
+            lastLon: longitude,
+            miles: newMiles,
+            lastSpeedTime: now,
+          }));
+
+          setActiveTrip(prev => prev ? { ...prev, miles: newMiles, stale: false, lastGps: Date.now() } : prev);
+        } catch {}
+      }
+    );
+
+    // Start background location task
+    await Location.startLocationUpdatesAsync('background-location-task', {
+      accuracy: Location.Accuracy.BestForNavigation,
+      activityType: Location.ActivityType.AutomotiveNavigation,
+      timeInterval: 10000,
+      distanceInterval: 0,
       foregroundService: {
         notificationTitle: 'Trip in Progress',
         notificationBody: 'Discovery Driver Portal is tracking your location.',
@@ -1058,6 +1243,7 @@ export default function MyTripsScreen({ session, navigation }) {
               onEnd={handleEnd}
               onPause={handlePause}
               onResume={handleResume}
+              onStartTracking={handleStartTracking}
               activeTrip={activeTrip}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
@@ -1084,6 +1270,7 @@ export default function MyTripsScreen({ session, navigation }) {
               onEnd={handleEnd}
               onPause={handlePause}
               onResume={handleResume}
+              onStartTracking={handleStartTracking}
               activeTrip={activeTrip}
               unreadCount={unreadCounts[trip.id] || 0}
               onChatPress={(selectedTrip) => {
@@ -1138,6 +1325,8 @@ const s = StyleSheet.create({
 
   startBtn: { backgroundColor: colors.primary, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
   startBtnText: { color: colors.bg, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
+  trackingBtn: { backgroundColor: colors.info, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
+  trackingBtnText: { color: colors.bg, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
   tripActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   pauseBtn: { flex: 1, borderWidth: 2, borderColor: colors.warning, borderRadius: radius.sm, padding: spacing.md, alignItems: 'center' },
   pauseBtnText: { color: colors.warning, fontWeight: '900', fontSize: 13, letterSpacing: 2 },
