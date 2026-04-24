@@ -84,7 +84,8 @@
     },
     "plugins": [
       "react-native-ble-plx",
-      "expo-sharing"
+      "expo-sharing",
+      "@sentry/react-native"
     ]
   }
 }
