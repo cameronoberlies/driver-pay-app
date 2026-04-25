@@ -85,10 +85,10 @@ function DriverModal({ driver, entries, visible, onClose }) {
           <Text style={s.modalSection}>THIS WEEK</Text>
           <View style={s.modalStatsRow}>
             {[
-              { label: 'PAY', value: fmt(weekPay) },
+              canSeePay && { label: 'PAY', value: fmt(weekPay) },
               { label: 'TRIPS', value: wk.length },
               { label: 'MILES', value: weekMiles.toFixed(1) },
-            ].map((item, i) => (
+            ].filter(Boolean).map((item, i) => (
               <View key={i} style={s.modalStat}>
                 <Text style={s.modalStatLabel}>{item.label}</Text>
                 <Text style={s.modalStatValue}>{item.value}</Text>
@@ -151,7 +151,8 @@ function DriverModal({ driver, entries, visible, onClose }) {
   );
 }
 
-export default function AdminOverview() {
+export default function AdminOverview({ userRole }) {
+  const canSeePay = userRole === 'admin';
   const { isTablet } = useResponsive();
   const [drivers, setDrivers] = useState([]);
   const [entries, setEntries] = useState([]);
@@ -216,8 +217,8 @@ export default function AdminOverview() {
           {[
             { label: 'DRIVERS', value: drivers.length },
             { label: 'TRIPS', value: weekEntries.length },
-            { label: 'WEEK PAY', value: fmt(weekEntries.reduce((t, e) => t + Number(e.pay), 0)) },
-          ].map((item, i) => (
+            canSeePay && { label: 'WEEK PAY', value: fmt(weekEntries.reduce((t, e) => t + Number(e.pay), 0)) },
+          ].filter(Boolean).map((item, i) => (
             <View key={i} style={s.statCard}>
               <Text style={s.statLabel}>{item.label}</Text>
               <Text style={s.statValue}>{item.value}</Text>
@@ -245,12 +246,15 @@ export default function AdminOverview() {
                   {driver.name}
                   {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
                 </Text>
+                {!driver.push_token && (
+                  <Text style={{ color: '#ff453a', fontSize: 10, fontWeight: '700', marginTop: 2 }}>NOTIFICATIONS OFF</Text>
+                )}
                 <Text style={s.driverMeta}>
                   {wk.length} trips · {weekMiles.toFixed(1)} mi · {monthTrips} this month
                 </Text>
               </View>
               <View style={s.cardRight}>
-                <Text style={s.driverPay}>{fmt(weekPay)}</Text>
+                {canSeePay && <Text style={s.driverPay}>{fmt(weekPay)}</Text>}
                 <Text style={s.chevron}>›</Text>
               </View>
             </TouchableOpacity>

@@ -38,6 +38,7 @@ import { installErrorHandlers, logEvent } from "./lib/systemLog";
 installErrorHandlers();
 import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
+import FleetScreen from "./screens/FleetScreen";
 import LiveFlightsScreen from "./screens/LiveFlightsScreen";
 import TripChatScreen from "./screens/TripChatScreen";
 import HomeScreen from "./screens/HomeScreen";
@@ -55,6 +56,7 @@ const ADMIN_TABS = [
   { id: "overview", label: "Overview" },
   { id: "log", label: "Log Entry" },
   { id: "entries", label: "All Entries" },
+  { id: "fleet", label: "Fleet" },
   { id: "mileage", label: "Mileage Costs" },
   { id: "availability", label: "Availability" },
   { id: "flights", label: "Live Flights" },
@@ -68,14 +70,16 @@ const CALLER_HIDDEN_TABS = ["log"];
 const BOTTOM_TAB_LABELS = {
   home: "HOME",
   trips: "TRIPS",
+  my_trips: "MY TRIPS",
   live: "LIVE DRIVERS",
 };
 
 function AdminNav({ active, onSelect, onSignOut, userRole }) {
   const [open, setOpen] = useState(false);
-  const tabs = userRole === "caller"
+  let tabs = userRole === "caller"
     ? ADMIN_TABS.filter((t) => !CALLER_HIDDEN_TABS.includes(t.id))
     : ADMIN_TABS;
+  // My Trips is a bottom tab for managers, no need in hamburger
 
   // Determine label: bottom tab takes priority, fallback to hamburger menu
   const activeLabel = BOTTOM_TAB_LABELS[active] || tabs.find((t) => t.id === active)?.label?.toUpperCase() || "";
@@ -142,11 +146,12 @@ function AdminNav({ active, onSelect, onSignOut, userRole }) {
   );
 }
 
-function AdminBottomTabs({ active, onSelect }) {
+function AdminBottomTabs({ active, onSelect, userRole }) {
   const insets = useSafeAreaInsets();
   const tabs = [
     { id: "home", label: "Home", icon: "🏠" },
     { id: "trips", label: "Trips", icon: "🚗" },
+    ...(userRole === "manager" ? [{ id: "my_trips", label: "My Trips", icon: "🛣️" }] : []),
     { id: "live", label: "Live", icon: "📍" },
   ];
 
@@ -283,7 +288,7 @@ export default function App() {
         profileLoadedRef.current = true;
         setProfile(data);
         // Default to "home" for admin/caller, "dashboard" for driver
-        setActiveTab(prev => prev ?? (data?.role === "admin" || data?.role === "caller" ? "home" : "dashboard"));
+        setActiveTab(prev => prev ?? (["admin", "manager", "caller"].includes(data?.role) ? "home" : "dashboard"));
         registerForPushNotifications(s.user.id);
       }
     } catch (e) {
@@ -388,10 +393,19 @@ export default function App() {
               } catch {}
             }
 
-            // Re-register geofence if iOS killed it while backgrounded
-            const geofenceActive = await GeofenceManager.isActive();
-            if (!geofenceActive && geofenceStartedRef.current) {
-              console.log("[Geofence] Re-registering after iOS suspension");
+            // Re-check push notification permission on foreground resume
+            // (driver may have just enabled notifications in Settings)
+            if (session?.user?.id) {
+              registerForPushNotifications(session.user.id);
+            }
+
+            // Only re-register geofence if the task is truly gone
+            // IMPORTANT: Do NOT re-register if already active — re-registration
+            // resets iOS geofence state and causes enter events to stop firing
+            const TaskMgr = require('expo-task-manager');
+            const taskExists = await TaskMgr.isTaskRegisteredAsync('dealership-geofence-task');
+            if (!taskExists && geofenceStartedRef.current) {
+              console.log("[Geofence] Task unregistered, re-registering");
               const restartResult = await GeofenceManager.start();
               const restartOk = restartResult?.success ?? restartResult;
               logEvent(
@@ -435,12 +449,36 @@ export default function App() {
             console.log('[Wake] Failed:', e.message);
           }
         }
+
+        // Handle remote OTA update push
+        if (data?.type === 'check_for_update') {
+          try {
+            if (__DEV__) return; // Skip in dev mode
+            const update = await Updates.checkForUpdateAsync();
+            if (update.isAvailable) {
+              await Updates.fetchUpdateAsync();
+              console.log('[OTA] Update downloaded');
+
+              // Only force-reload if no active trip
+              const AsyncStorageOTA = require('@react-native-async-storage/async-storage').default;
+              const activeTrip = await AsyncStorageOTA.getItem('activeTrip');
+              if (!activeTrip) {
+                console.log('[OTA] No active trip — reloading app');
+                await Updates.reloadAsync();
+              } else {
+                console.log('[OTA] Active trip — update will apply on next restart');
+              }
+            }
+          } catch (e) {
+            console.log('[OTA] Update check failed:', e.message);
+          }
+        }
       });
 
     responseListener.current =
       Notifications.addNotificationResponseReceivedListener(() => {
-        if (profile?.role === "driver") {
-          setActiveTab("trips");
+        if (profile?.role === "driver" || profile?.role === "manager") {
+          setActiveTab(profile?.role === "manager" ? "my_trips" : "trips");
           setRefreshKey((k) => k + 1);
         }
       });
@@ -457,9 +495,9 @@ export default function App() {
     };
   }, []);
 
-  // Check permissions for drivers
+  // Check permissions for drivers and managers (who can also be drivers)
   useEffect(() => {
-    if (profile?.role !== "driver") return;
+    if (profile?.role !== "driver" && profile?.role !== "manager") return;
     (async () => {
       const warnings = [];
       const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
@@ -480,7 +518,7 @@ export default function App() {
 
   const geofenceStartedRef = useRef(false);
   useEffect(() => {
-    if (profile?.role === "driver" && !geofenceStartedRef.current) {
+    if ((profile?.role === "driver" || profile?.role === "manager") && !geofenceStartedRef.current) {
       geofenceStartedRef.current = true;
       GeofenceManager.start().then((result) => {
         const ok = result?.success ?? result;
@@ -531,7 +569,9 @@ export default function App() {
 
   if (!session) return <LoginScreen />;
 
-  const isAdmin = profile?.role === "admin" || profile?.role === "caller";
+  const isAdmin = profile?.role === "admin" || profile?.role === "manager" || profile?.role === "caller";
+  const canSeePay = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
 
   function renderScreen() {
     if (isAdmin) {
@@ -539,9 +579,13 @@ export default function App() {
       if (activeTab === "home") return <HomeScreen key={refreshKey} onManageUsers={() => setShowManageUsers(true)} />;
       if (activeTab === "trips") return <AdminTripsScreen key={refreshKey} session={session} userRole={profile?.role} />;
       if (activeTab === "live") return <LiveDriversScreen key={refreshKey} />;
-      
+
+      // Manager's own trips (driver mode)
+      if (activeTab === "my_trips")
+        return <MyTripsScreen key={refreshKey} session={session} navigation={{ navigate: (screen, params) => { if (screen === 'TripChat') setChatTrip(params); } }} />;
+
       // Hamburger menu screens
-      if (activeTab === "overview") return <AdminOverview key={refreshKey} />;
+      if (activeTab === "overview") return <AdminOverview key={refreshKey} userRole={profile?.role} />;
       if (activeTab === "log") return <LogEntryScreen key={refreshKey} userRole={profile?.role} />;
       if (activeTab === "entries") return <AllEntriesScreen key={refreshKey} userRole={profile?.role} />;
       if (activeTab === "mileage") return <MileageCostsScreen key={refreshKey} />;
@@ -549,6 +593,7 @@ export default function App() {
       if (activeTab === "tracking") return <AdminTrackingHealthScreen key={refreshKey} />;
       if (activeTab === "geofence") return <GeofenceActivityScreen key={refreshKey} />;
       if (activeTab === "flights") return <LiveFlightsScreen key={refreshKey} />;
+      if (activeTab === "fleet") return <FleetScreen key={refreshKey} />;
     } else {
       if (activeTab === "dashboard") return <DriverDashboard key={refreshKey} session={session} />;
       if (activeTab === "trips")
@@ -569,11 +614,12 @@ export default function App() {
             userRole={profile?.role}
           />
           <View style={styles.screen}>{renderScreen()}</View>
-          <AdminBottomTabs active={activeTab} onSelect={handleTabSelect} />
+          <AdminBottomTabs active={activeTab} onSelect={handleTabSelect} userRole={profile?.role} />
           <ManageUsersModal
             visible={showManageUsers}
             onClose={() => setShowManageUsers(false)}
             session={session}
+            userRole={profile?.role}
           />
           {showUpdateToast && (
             <View style={styles.updateToast}>
@@ -605,10 +651,8 @@ export default function App() {
           <View style={styles.permissionBanner}>
             <Text style={styles.permissionText}>{permissionWarning}</Text>
             <TouchableOpacity onPress={() => {
-              if (Platform.OS === 'ios') {
-                const { Linking } = require('react-native');
-                Linking.openSettings();
-              }
+              const { Linking } = require('react-native');
+              Linking.openSettings();
               setPermissionWarning(null);
             }}>
               <Text style={styles.permissionAction}>OPEN SETTINGS</Text>

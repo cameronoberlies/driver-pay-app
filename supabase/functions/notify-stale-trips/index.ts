@@ -46,11 +46,27 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Dedup: skip if we already notified about stale trips in the last 24 hours
+    const { data: recentNotif } = await supabaseAdmin
+      .from('system_logs')
+      .select('id')
+      .eq('event', 'stale_trips_notified')
+      .eq('source', 'edge_function')
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .limit(1);
+
+    if (recentNotif && recentNotif.length > 0) {
+      return new Response(
+        JSON.stringify({ success: true, sent: 0, message: 'Already notified in last 24h' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
     // Get admin push tokens
     const { data: admins } = await supabaseAdmin
       .from('profiles')
       .select('id, push_token')
-      .in('role', ['admin', 'caller'])
+      .in('role', ['admin', 'manager', 'caller'])
       .not('push_token', 'is', null);
 
     const pushTokens = (admins || [])

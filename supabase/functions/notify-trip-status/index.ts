@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
     const { data: admins, error: adminsError } = await supabaseAdmin
       .from('profiles')
       .select('id, push_token')
-      .in('role', ['admin', 'caller'])
+      .in('role', ['admin', 'manager', 'caller'])
       .not('push_token', 'is', null);
 
     if (adminsError || !admins || admins.length === 0) {
@@ -76,6 +76,32 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
+
+    // Dedup: skip if same trip+action was notified in the last 5 minutes
+    const { data: recentNotif } = await supabaseAdmin
+      .from('system_logs')
+      .select('id')
+      .eq('event', `notify_trip_${action}`)
+      .eq('source', 'edge_function')
+      .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+      .contains('metadata', { trip_id })
+      .limit(1);
+
+    if (recentNotif && recentNotif.length > 0) {
+      return new Response(
+        JSON.stringify({ success: true, sent: 0, message: 'Duplicate suppressed' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Log this notification for dedup
+    await supabaseAdmin.from('system_logs').insert({
+      source: 'edge_function',
+      level: 'info',
+      event: `notify_trip_${action}`,
+      message: `Trip ${action} notification for ${trip_id}`,
+      metadata: { trip_id, driver_id },
+    });
 
     const tripType = trip.trip_type === 'fly' ? 'flight' : 'drive';
     let title: string;

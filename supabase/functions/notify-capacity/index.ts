@@ -48,7 +48,7 @@ Deno.serve(async () => {
   const { data: recipients, error: profilesError } = await supabase
     .from("profiles")
     .select("id, name, push_token, role")
-    .in("role", ["admin", "caller"])
+    .in("role", ["admin", "manager", "caller"])
     .not("push_token", "is", null);
 
   if (profilesError) {

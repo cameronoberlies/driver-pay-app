@@ -88,34 +88,85 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Send silent push notifications
+    // Check how long each driver has been stale and if we've already sent a visible notification
     const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-    const notifications = pushTokens.map((p) => ({
-      to: p.token,
-      // Silent push: no title, body, or sound — just data
-      data: { type: 'wake_location', silent: true },
-      priority: 'high',
-      // iOS content-available flag for silent push
-      _contentAvailable: true,
-    }));
+    const silentNotifications = [];
+    const visibleNotifications = [];
 
-    const pushResponse = await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(notifications),
-    });
+    // Check for recent visible notifications (within last 60 min) to enforce cooldown
+    const { data: recentVisible } = await supabaseAdmin
+      .from('system_logs')
+      .select('metadata')
+      .eq('event', 'wake_visible_notification')
+      .gte('created_at', new Date(now - 60 * 60 * 1000).toISOString());
 
-    const pushResult = await pushResponse.json();
+    const recentlyNotifiedIds = new Set(
+      (recentVisible || []).map((r: any) => r.metadata?.driver_id).filter(Boolean)
+    );
+
+    // Only send visible notifications between 5am-10pm ET
+    const nowET = new Date(now - 4 * 60 * 60 * 1000); // UTC-4 EDT
+    const hourET = nowET.getHours();
+    const withinHours = hourET >= 5 || hourET === 0; // 5am to midnight ET
+
+    for (const p of pushTokens) {
+      const lastUpdate = locationMap[p.id];
+      const staleDuration = lastUpdate ? now - new Date(lastUpdate).getTime() : Infinity;
+      const staleMinutes = Math.round(staleDuration / 60000);
+
+      // Under 30 min stale: silent push only
+      // Over 30 min stale: visible notification (1 per hour max, daytime only)
+      if (staleMinutes >= 30 && withinHours && !recentlyNotifiedIds.has(p.id)) {
+        visibleNotifications.push({
+          to: p.token,
+          sound: 'default',
+          title: 'Tracking Paused',
+          body: 'Tap to resume trip tracking',
+          data: { type: 'wake_location', visible: true },
+          priority: 'high',
+        });
+
+        // Log the visible notification for cooldown tracking
+        await supabaseAdmin.from('system_logs').insert({
+          source: 'edge_function',
+          level: 'warn',
+          event: 'wake_visible_notification',
+          message: `Visible wake notification sent to ${p.name} (stale ${staleMinutes}min)`,
+          metadata: { driver_id: p.id, stale_minutes: staleMinutes },
+        });
+      } else {
+        silentNotifications.push({
+          to: p.token,
+          data: { type: 'wake_location', silent: true },
+          priority: 'high',
+          _contentAvailable: true,
+        });
+      }
+    }
+
+    // Send all notifications
+    const allNotifications = [...silentNotifications, ...visibleNotifications];
+    let pushResult = null;
+    if (allNotifications.length > 0) {
+      const pushResponse = await fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(allNotifications),
+      });
+      pushResult = await pushResponse.json();
+    }
 
     // Log to system_logs
     await supabaseAdmin.from('system_logs').insert({
       source: 'edge_function',
       level: 'info',
       event: 'wake_stale_drivers',
-      message: `Sent silent push to ${pushTokens.length} stale driver(s): ${pushTokens.map((p) => p.name).join(', ')}`,
+      message: `Sent ${silentNotifications.length} silent + ${visibleNotifications.length} visible push to ${pushTokens.length} stale driver(s): ${pushTokens.map((p) => p.name).join(', ')}`,
       metadata: {
         stale_driver_ids: staleDriverIds,
         push_sent: pushTokens.length,
+        silent_count: silentNotifications.length,
+        visible_count: visibleNotifications.length,
       },
     });
 

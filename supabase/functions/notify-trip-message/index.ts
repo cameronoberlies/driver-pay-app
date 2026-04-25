@@ -96,18 +96,18 @@ serve(async (req) => {
     // Determine recipients
     let recipientIds: string[] = [];
 
-    if (senderProfile.role === 'admin') {
-      // Admin sent it → notify the driver(s)
+    if (['admin', 'manager'].includes(senderProfile.role)) {
+      // Admin/manager sent it → notify the driver(s)
       recipientIds.push(tripData.driver_id);
       if (tripData.second_driver_id) {
         recipientIds.push(tripData.second_driver_id);
       }
     } else {
-      // Driver sent it → notify all admins
+      // Driver sent it → notify all admins and managers
       const { data: admins, error: adminsError } = await supabase
         .from('profiles')
         .select('id')
-        .eq('role', 'admin');
+        .in('role', ['admin', 'manager']);
 
       if (!adminsError && admins) {
         recipientIds = admins.map((a: Profile) => a.id);
@@ -178,7 +178,7 @@ serve(async (req) => {
   } catch (error) {
     return new Response(
       JSON.stringify({ error: error.message }),
-notify-trip-message      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 });

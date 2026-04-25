@@ -62,7 +62,7 @@ serve(async (req) => {
     const { data: admins, error } = await supabase
       .from('profiles')
       .select('id, push_token, name')
-      .eq('role', 'admin')
+      .in('role', ['admin', 'manager'])
       .not('push_token', 'is', null)
     
     console.log('Query result - Admins found:', admins?.length ?? 0)

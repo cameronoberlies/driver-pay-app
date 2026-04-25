@@ -138,7 +138,8 @@ function PendingRow({ entry, driverName, driverWillingToFly, onComplete, onDelet
   );
 }
 
-export default function LogEntryScreen() {
+export default function LogEntryScreen({ userRole }) {
+  const canSeePay = userRole === 'admin';
   const { isTablet } = useResponsive();
   const [drivers, setDrivers] = useState([]);
   const [pending, setPending] = useState([]);
@@ -156,10 +157,17 @@ export default function LogEntryScreen() {
     pay: '',
     hours: '',
     miles: '',
-    actual_cost: '',
     estimated_cost: '',
+    flight_cost: '',
+    rideshare_cost: '',
+    fuel_cost: '',
+    other_cost: '',
     city: '',
     crm_id: '',
+    trip_type: '',
+    stock_numbers: '',
+    dealer_plate: '',
+    chase_vehicle_stock: '',
     recon_missed: false,
   });
 
@@ -189,6 +197,13 @@ export default function LogEntryScreen() {
 
   useEffect(() => { load(); }, []);
 
+  const [chaseVehicles, setChaseVehicles] = useState([]);
+  useEffect(() => {
+    supabase.from('chase_vehicles').select('*').eq('status', 'active').order('stock_number').then(({ data }) => {
+      setChaseVehicles(data || []);
+    });
+  }, []);
+
   function handlePendingComplete(updated) {
     setPending(prev => prev.filter(e => e.id !== updated.id));
   }
@@ -202,28 +217,46 @@ export default function LogEntryScreen() {
     setPending(prev => prev.filter(e => e.id !== entryId));
   }
 
+  // Compute actual cost from itemized fields + driver pay
+  const logActualCost = [
+    form.flight_cost, form.rideshare_cost, form.fuel_cost, form.other_cost, form.pay,
+  ].reduce((sum, v) => sum + (Number(v) || 0), 0);
+
   async function handleSave() {
-    if (!form.driver_id || !form.pay || !form.city || !form.crm_id) {
-      Alert.alert('Missing Fields', 'Driver, pay, city, and CRM ID are required.');
+    if (!form.driver_id || (canSeePay && !form.pay)) {
+      Alert.alert('Missing Fields', 'Driver and pay are required.');
       return;
     }
     setSaving(true);
+    const costFields = {
+      flight_cost: form.flight_cost ? Number(form.flight_cost) : null,
+      rideshare_cost: form.rideshare_cost ? Number(form.rideshare_cost) : null,
+      fuel_cost: form.fuel_cost ? Number(form.fuel_cost) : null,
+      other_cost: form.other_cost ? Number(form.other_cost) : null,
+    };
     const { error } = await supabase.from('entries').insert({
       driver_id: form.driver_id,
       date: form.date,
       pay: Number(form.pay),
       hours: form.hours ? Number(form.hours) : null,
       miles: form.miles ? Number(form.miles) : 0,
-      actual_cost: form.actual_cost ? Number(form.actual_cost) : 0,
+      actual_cost: logActualCost,
       estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : 0,
       city: form.city.trim(),
       crm_id: form.crm_id.trim(),
+      trip_type: form.trip_type || null,
+      stock_numbers: form.stock_numbers || null,
       recon_missed: form.recon_missed,
+      ...costFields,
     });
     setSaving(false);
     if (error) { Alert.alert('Save Failed', error.message); return; }
     setSaved(true);
-    setForm(f => ({ ...f, pay: '', hours: '', miles: '', actual_cost: '', estimated_cost: '', city: '', crm_id: '', recon_missed: false }));
+    setForm(f => ({
+      ...f, pay: '', hours: '', miles: '', estimated_cost: '',
+      flight_cost: '', rideshare_cost: '', fuel_cost: '', other_cost: '',
+      city: '', crm_id: '', trip_type: '', stock_numbers: '', dealer_plate: '', chase_vehicle_stock: '', recon_missed: false,
+    }));
     setTimeout(() => setSaved(false), 3000);
   }
 
@@ -317,11 +350,13 @@ export default function LogEntryScreen() {
       )}
 
       <View style={s.row}>
-        <View style={s.half}>
-          <Text style={s.label}>PAY ($)</Text>
-          <TextInput style={s.input} value={form.pay} onChangeText={v => set('pay', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
-        </View>
-        <View style={s.half}>
+        {canSeePay && (
+          <View style={s.half}>
+            <Text style={s.label}>PAY ($)</Text>
+            <TextInput style={s.input} value={form.pay} onChangeText={v => set('pay', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+          </View>
+        )}
+        <View style={canSeePay ? s.half : { flex: 1 }}>
           <Text style={s.label}>HOURS WORKED</Text>
           <TextInput style={s.input} value={form.hours} onChangeText={v => set('hours', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
         </View>
@@ -333,19 +368,98 @@ export default function LogEntryScreen() {
           <TextInput style={s.input} value={form.miles} onChangeText={v => set('miles', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
         </View>
         <View style={s.half}>
-          <Text style={s.label}>ACTUAL COST ($)</Text>
-          <TextInput style={s.input} value={form.actual_cost} onChangeText={v => set('actual_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+          <Text style={s.label}>ESTIMATED COST ($)</Text>
+          <TextInput style={s.input} value={form.estimated_cost} onChangeText={v => set('estimated_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
         </View>
       </View>
 
-      <Text style={s.label}>ESTIMATED COST ($)</Text>
-      <TextInput style={s.input} value={form.estimated_cost} onChangeText={v => set('estimated_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+      <Text style={s.label}>TRIP TYPE</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.xs }}>
+        {[{ key: '', label: 'None' }, { key: 'fly', label: '✈ Fly' }, { key: 'drive', label: '🚗 Drive' }, { key: 'aa', label: '🚐 AA' }, { key: 'courier', label: '📦 Courier' }, { key: 'airport', label: '🛫 Airport' }].map(t => (
+          <TouchableOpacity
+            key={t.key}
+            style={[s.pill, form.trip_type === t.key && s.pillActive]}
+            onPress={() => set('trip_type', t.key)}
+          >
+            <Text style={[s.pillText, form.trip_type === t.key && s.pillTextActive]}>{t.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       <Text style={s.label}>CITY</Text>
       <CityAutocomplete style={s.input} value={form.city} onChangeText={v => set('city', v)} placeholder="Charlotte" placeholderTextColor={colors.textMuted} />
 
       <Text style={s.label}>CARPAGE ID</Text>
       <TextInput style={s.input} value={form.crm_id} onChangeText={v => set('crm_id', v.toUpperCase())} placeholder="CP-XXXX" placeholderTextColor={colors.textMuted} autoCapitalize="characters" />
+
+      <Text style={s.label}>DEALER PLATE #</Text>
+      <TextInput style={s.input} value={form.dealer_plate} onChangeText={v => set('dealer_plate', v)} placeholder="D-1234" placeholderTextColor={colors.textMuted} />
+
+      {form.trip_type === 'drive' && (
+        <>
+          <Text style={s.label}>CHASE VEHICLE</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.xs }}>
+            <TouchableOpacity
+              style={[s.pill, !form.chase_vehicle_stock && s.pillActive]}
+              onPress={() => set('chase_vehicle_stock', '')}
+            >
+              <Text style={[s.pillText, !form.chase_vehicle_stock && s.pillTextActive]}>— None —</Text>
+            </TouchableOpacity>
+            {chaseVehicles.map((v) => (
+              <TouchableOpacity
+                key={v.id}
+                style={[s.pill, form.chase_vehicle_stock === v.stock_number && s.pillActive]}
+                onPress={() => set('chase_vehicle_stock', v.stock_number)}
+              >
+                <Text style={[s.pillText, form.chase_vehicle_stock === v.stock_number && s.pillTextActive]}>
+                  {v.stock_number} · {v.year} {v.make} {v.model}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      )}
+
+      {form.trip_type === 'aa' && (
+        <>
+          <Text style={s.label}>STOCK NUMBERS</Text>
+          <TextInput style={s.input} value={form.stock_numbers} onChangeText={v => set('stock_numbers', v)} placeholder="A123, B456, C789" placeholderTextColor={colors.textMuted} />
+        </>
+      )}
+
+      {/* ── Itemized Cost Breakdown ── */}
+      <View style={{ marginTop: spacing.lg, padding: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border }}>
+        <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textTertiary, marginBottom: spacing.sm }}>COST BREAKDOWN</Text>
+
+        {(form.trip_type === 'fly' || form.trip_type === 'airport') && (
+          <View style={s.row}>
+            <View style={s.half}>
+              <Text style={s.label}>FLIGHT TICKET ($)</Text>
+              <TextInput style={s.input} value={form.flight_cost} onChangeText={v => set('flight_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+            </View>
+            <View style={s.half}>
+              <Text style={s.label}>RIDESHARE ($)</Text>
+              <TextInput style={s.input} value={form.rideshare_cost} onChangeText={v => set('rideshare_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+            </View>
+          </View>
+        )}
+
+        <View style={s.row}>
+          <View style={s.half}>
+            <Text style={s.label}>FUEL ($)</Text>
+            <TextInput style={s.input} value={form.fuel_cost} onChangeText={v => set('fuel_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+          </View>
+          <View style={s.half}>
+            <Text style={s.label}>OTHER EXPENSES ($)</Text>
+            <TextInput style={s.input} value={form.other_cost} onChangeText={v => set('other_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+          </View>
+        </View>
+
+        <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textTertiary }}>Total Actual Cost</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>${logActualCost.toFixed(2)}</Text>
+        </View>
+      </View>
 
       <View style={s.switchRow}>
         <Text style={[s.switchLabel, form.recon_missed && { color: colors.error }]}>RECON MISSED</Text>
