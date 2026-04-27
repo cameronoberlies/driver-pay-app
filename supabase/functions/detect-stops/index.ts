@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       { data: allOpenStops },
       { data: allStopStates },
     ] = await Promise.all([
-      supabase.from('driver_locations').select('driver_id, latitude, longitude, updated_at').in('driver_id', driverIds),
+      supabase.from('driver_locations').select('driver_id, latitude, longitude, updated_at, obd_speed').in('driver_id', driverIds),
       supabase.from('trip_stops').select('id, trip_id, driver_id, latitude, longitude, started_at').is('ended_at', null),
       supabase.from('driver_stop_state').select('*').in('driver_id', driverIds),
     ])
@@ -256,10 +256,18 @@ Deno.serve(async (req) => {
         // Skip stale locations — can't trust GPS from 15+ min ago for new stops
         if (locAge > STALE_LOCATION_MINUTES) continue
 
+        // OBD-based stationary detection (most reliable when available)
+        // If OBD reports speed = 0, the vehicle is definitively not moving
+        // regardless of GPS drift from driver walking around with phone
+        const hasObdSpeed = (loc as any).obd_speed != null
+        const obdStationary = hasObdSpeed && (loc as any).obd_speed === 0
+
         if (state) {
           const dist = distanceMeters(state.last_lat, state.last_lon, lat, lon)
+          // GPS-stationary OR OBD-stationary (vehicle not moving)
+          const isStationary = dist < STOP_THRESHOLD_METERS || obdStationary
 
-          if (dist < STOP_THRESHOLD_METERS) {
+          if (isStationary) {
             // Still in same spot — check if stationary long enough
             const stationarySince = state.stationary_since
               ? new Date(state.stationary_since)
