@@ -6,6 +6,7 @@ import {
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 
 // Base64 to ArrayBuffer decoder for Supabase storage uploads
@@ -407,11 +408,15 @@ function TripCard({ trip, currentUserId, onStart, onEnd, onPause, onResume, onSt
         </View>
       )}
 
+      {/* Driver B independent OBD tracking — disabled per management decision Apr 2026.
+          Driver B currently follows Driver A; only Driver A connects to OBD in chase car.
+          Re-enable via OTA when needed.
       {canStartTracking && (
         <TouchableOpacity style={s.trackingBtn} onPress={() => onStartTracking(trip)}>
           <Text style={s.trackingBtnText}>▶ START TRACKING</Text>
         </TouchableOpacity>
       )}
+      */}
 
       {activeTrip && !isActive && trip.status === 'pending' && (
         <View style={{ paddingHorizontal: px, marginBottom: 16 }}>
@@ -800,18 +805,24 @@ export default function MyTripsScreen({ session, navigation }) {
       if (result.canceled || !result.assets || result.assets.length === 0) return null;
 
       for (const asset of result.assets) {
-        const ext = asset.uri.split('.').pop()?.toLowerCase() || 'jpg';
-        const fileName = `${tripId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        // Force convert to JPEG — iPhone HEIC isn't renderable in Chrome/Firefox.
+        // ImagePicker doesn't transcode, so we use ImageManipulator to actually re-encode.
+        const fileName = `${tripId}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
 
-        // Use base64 from image picker and decode to ArrayBuffer
-        if (!asset.base64) {
-          console.log('[Photo] No base64 data for asset, skipping');
+        const manipulated = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [],
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+
+        if (!manipulated.base64) {
+          console.log('[Photo] Manipulation failed, skipping');
           continue;
         }
 
         const { error: uploadErr } = await supabase.storage
           .from('vehicle-photos')
-          .upload(fileName, decode(asset.base64), { cacheControl: '3600', contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}` });
+          .upload(fileName, decode(manipulated.base64), { cacheControl: '3600', contentType: 'image/jpeg' });
 
         if (uploadErr) {
           console.log('[Photo] Upload failed:', uploadErr.message);
