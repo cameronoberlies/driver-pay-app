@@ -35,14 +35,20 @@ import AdminTrackingHealthScreen from "./screens/AdminTrackingHealthScreen";
 import { GeofenceManager } from "./lib/GeofenceManager";
 import { useUpdateChecker } from "./lib/AndroidUpdateChecker";
 import { installErrorHandlers, logEvent } from "./lib/systemLog";
-import * as Sentry from "@sentry/react-native";
 
-Sentry.init({
-  dsn: "https://063b927a2d486054ad8cb9b64fb20874@o4511135587827712.ingest.us.sentry.io/4511295311446016",
-  enabled: !__DEV__,
-  tracesSampleRate: 0.1,
-  attachStacktrace: true,
-});
+// Sentry is wrapped in try/require so old runtimes (1.0.7) without the
+// native module don't crash on import.
+try {
+  const Sentry = require("@sentry/react-native");
+  Sentry.init({
+    dsn: "https://063b927a2d486054ad8cb9b64fb20874@o4511135587827712.ingest.us.sentry.io/4511295311446016",
+    enabled: !__DEV__,
+    tracesSampleRate: 0.1,
+    attachStacktrace: true,
+  });
+} catch (e) {
+  console.log('[Sentry] init skipped:', e.message);
+}
 
 installErrorHandlers();
 import * as Updates from "expo-updates";

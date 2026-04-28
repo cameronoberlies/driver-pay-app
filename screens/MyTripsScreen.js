@@ -6,8 +6,12 @@ import {
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system';
+// ImageManipulator and FileSystem are loaded via require so old runtimes
+// (1.0.7) without these native modules don't crash at module load time.
+let ImageManipulator = null;
+let FileSystem = null;
+try { ImageManipulator = require('expo-image-manipulator'); } catch {}
+try { FileSystem = require('expo-file-system'); } catch {}
 
 // Base64 to ArrayBuffer decoder for Supabase storage uploads
 function decode(base64) {
@@ -808,6 +812,12 @@ export default function MyTripsScreen({ session, navigation }) {
         // Force convert to JPEG — iPhone HEIC isn't renderable in Chrome/Firefox.
         // ImagePicker doesn't transcode, so we use ImageManipulator to actually re-encode.
         const fileName = `${tripId}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+
+        // Old runtime without ImageManipulator — fall back to original asset
+        if (!ImageManipulator) {
+          Alert.alert('Update Required', 'Photo upload requires the latest app version. Please update from the App Store.');
+          return null;
+        }
 
         const manipulated = await ImageManipulator.manipulateAsync(
           asset.uri,
