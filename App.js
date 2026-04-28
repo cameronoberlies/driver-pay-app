@@ -17,6 +17,7 @@ import {
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import * as Location from "expo-location";
+import Constants from "expo-constants";
 import { supabase } from "./lib/supabase";
 import { colors, spacing, radius, typography } from "./lib/theme";
 import LoginScreen from "./screens/LoginScreen";
@@ -238,9 +239,10 @@ async function registerForPushNotifications(userId) {
       }
     } catch {}
 
+    const appVersion = Constants.expoConfig?.version || Constants.manifest?.version || null;
     const { error } = await supabase
       .from("profiles")
-      .update({ push_token: token, device_os: Platform.OS, app_update_id: updateId })
+      .update({ push_token: token, device_os: Platform.OS, app_update_id: updateId, app_version: appVersion })
       .eq("id", userId);
     console.log("Push: saved to Supabase, error:", error);
 
