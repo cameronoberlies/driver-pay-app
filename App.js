@@ -45,6 +45,13 @@ try {
     enabled: !__DEV__,
     tracesSampleRate: 0.1,
     attachStacktrace: true,
+    // Filter out benign iOS background noise
+    ignoreErrors: [
+      // Keychain access fails when phone is locked (background wake before first unlock)
+      'Keychain access failed',
+      'User interaction is not allowed',
+      'getRegistrationInfoAsync',
+    ],
   });
 } catch (e) {
   console.log('[Sentry] init skipped:', e.message);
