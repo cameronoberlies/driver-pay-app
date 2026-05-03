@@ -220,6 +220,20 @@ async function registerForPushNotifications(userId) {
     return;
   }
 
+  // Android requires a notification channel BEFORE requesting permissions/tokens.
+  // Without it, FCM silently drops notifications.
+  if (Platform.OS === "android") {
+    try {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "default",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+      });
+    } catch (e) {
+      logEvent('warn', 'push_channel_failed', `Android channel setup failed: ${e.message}`, { error: e.message });
+    }
+  }
+
   const { status: existing } = await Notifications.getPermissionsAsync();
   console.log("Push: existing permission status:", existing);
   let finalStatus = existing;
@@ -231,8 +245,12 @@ async function registerForPushNotifications(userId) {
 
   if (finalStatus !== "granted") {
     console.log("Push: permission not granted");
+    logEvent('warn', 'push_permission_denied', 'Push notification permission not granted', { device_os: Platform.OS });
     return;
   }
+
+  // Always record the device_os even if token fetch fails — helps us debug
+  await supabase.from("profiles").update({ device_os: Platform.OS }).eq("id", userId);
 
   try {
     const tokenData = await Notifications.getExpoPushTokenAsync({
@@ -244,7 +262,6 @@ async function registerForPushNotifications(userId) {
     let updateId = null;
     try {
       if (!__DEV__) {
-        // Try to get the message from the manifest, fall back to createdAt, then updateId
         const message = Updates.manifest?.extra?.expoGo?.updateMessage
           || Updates.manifest?.message;
         const createdAt = Updates.createdAt?.toISOString?.() || null;
@@ -258,16 +275,13 @@ async function registerForPushNotifications(userId) {
       .update({ push_token: token, device_os: Platform.OS, app_update_id: updateId, app_version: appVersion })
       .eq("id", userId);
     console.log("Push: saved to Supabase, error:", error);
-
-    if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync("default", {
-        name: "default",
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-      });
+    if (error) {
+      logEvent('error', 'push_token_save_failed', `Failed to save push token: ${error.message}`, { error: error.message });
     }
   } catch (e) {
     console.log("Push: error getting token:", e.message);
+    logEvent('error', 'push_token_fetch_failed', `getExpoPushTokenAsync failed: ${e.message}`,
+      { device_os: Platform.OS, error: e.message, stack: e.stack?.substring(0, 500) });
   }
 }
 
