@@ -725,9 +725,30 @@ export default function MyTripsScreen({ session, navigation }) {
         { event: '*', schema: 'public', table: 'trips' },
         async (payload) => {
           const row = payload.new || payload.old;
+          const oldRow = payload.old;
           const userId = session.user.id;
           // Only reload if this trip involves the current driver
           if (row?.driver_id === userId || row?.second_driver_id === userId) {
+            // Detect trip reopen: status flipped from completed back to in_progress
+            // and we're the designated driver and we're not already tracking
+            if (
+              payload.eventType === 'UPDATE' &&
+              oldRow?.status === 'completed' &&
+              row.status === 'in_progress' &&
+              row.designated_driver_id === userId &&
+              activeTrip?.id !== row.id
+            ) {
+              Alert.alert(
+                '🔄 Trip Reopened',
+                `Your trip to ${row.city} has been reopened by an admin. Resume tracking from your current location?\n\nExisting miles and hours will be preserved.`,
+                [
+                  { text: 'Not Now', style: 'cancel' },
+                  { text: 'Resume Tracking', onPress: () => handleResumeAfterReopen(row) },
+                ]
+              );
+              load();
+              return;
+            }
             // If trip was completed/finalized and we're the secondary driver tracking, auto-stop
             if ((row.status === 'completed' || row.status === 'finalized') && activeTrip?.id === row.id) {
               const stored = await AsyncStorage.getItem('activeTrip');
@@ -883,6 +904,133 @@ export default function MyTripsScreen({ session, navigation }) {
   }
 
   // ── Start trip ───────────────────────────────────────────────────────────
+  // Resume tracking on a trip that was reopened by an admin.
+  // Preserves existing miles, hours, and speed data — continues adding to them.
+  async function handleResumeAfterReopen(trip) {
+    const permitted = await requestPermissions();
+    if (!permitted) return;
+
+    // Initialize OBD same as a fresh start
+    try {
+      const bleReady = await obdBLE.init();
+      if (bleReady) {
+        const devices = await obdBLE.scan(8000);
+        if (devices.length > 0) {
+          devices.sort((a, b) => b.rssi - a.rssi);
+          const connected = await obdBLE.connect(devices[0].id);
+          if (connected) obdData.startRecording();
+        }
+      }
+    } catch (e) {
+      console.log('[OBD] Resume init error (non-fatal):', e.message);
+    }
+
+    // Use the trip's original actual_start so elapsed time keeps counting
+    const startTime = trip.actual_start ? new Date(trip.actual_start).getTime() : Date.now();
+    startTimeRef.current = startTime;
+
+    const existingMiles = Number(trip.miles) || 0;
+    setActiveTrip({ id: trip.id, miles: existingMiles, elapsed: Math.floor((Date.now() - startTime) / 1000) });
+    setTrips(prev => prev.map(t => t.id === trip.id ? { ...t, status: 'in_progress', actual_end: null } : t));
+
+    // Start elapsed timer
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setActiveTrip(prev => {
+        if (!prev) return prev;
+        const isStale = prev.lastGps && (Date.now() - prev.lastGps) > 60000;
+        return {
+          ...prev,
+          elapsed: Math.floor((Date.now() - startTimeRef.current) / 1000),
+          stale: isStale,
+        };
+      });
+    }, 1000);
+
+    // Store trip state — preserve existing miles and speed_data
+    const mileageStartTime = trip.trip_type === 'fly' && trip.scheduled_pickup
+      ? new Date(trip.scheduled_pickup).getTime()
+      : null;
+    await AsyncStorage.setItem('activeTrip', JSON.stringify({
+      tripId: trip.id,
+      userId: session.user.id,
+      lastLat: null,
+      lastLon: null,
+      miles: existingMiles,
+      startTime,
+      topSpeed: trip.speed_data?.top_speed || 0,
+      secondsOver80: trip.speed_data?.seconds_over_80 || 0,
+      secondsOver90: trip.speed_data?.seconds_over_90 || 0,
+      lastSpeedTime: null,
+      tripType: trip.trip_type,
+      mileageStartTime,
+      reopened: true,
+    }));
+
+    // Set up location watcher and background task — reuse handleStart's logic by calling it
+    // would re-update trip status, so we duplicate the watcher setup here.
+    if (locationWatcherRef.current) locationWatcherRef.current.remove();
+    locationWatcherRef.current = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 10000, distanceInterval: 0 },
+      async (loc) => {
+        const { latitude, longitude } = loc.coords;
+        const locUpdate = {
+          driver_id: session.user.id,
+          latitude,
+          longitude,
+          updated_at: new Date().toISOString(),
+        };
+        if (obdBLE.isConnected()) {
+          const snap = obdData.getSnapshot();
+          if (snap.speed != null) locUpdate.obd_speed = snap.speed;
+          if (snap.rpm != null) locUpdate.obd_rpm = snap.rpm;
+          if (snap.fuelLevel != null) locUpdate.obd_fuel = snap.fuelLevel;
+        }
+        await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
+
+        try {
+          const stored = await AsyncStorage.getItem('activeTrip');
+          if (!stored) return;
+          const tripData = JSON.parse(stored);
+          let newMiles = tripData.miles || 0;
+          const now = Date.now();
+          const mileageActive = !tripData.mileageStartTime || Date.now() >= tripData.mileageStartTime;
+          if (mileageActive && tripData.lastLat && tripData.lastLon) {
+            const delta = getDistanceMiles(tripData.lastLat, tripData.lastLon, latitude, longitude);
+            const secsSinceLast = tripData.lastSpeedTime ? (now - tripData.lastSpeedTime) / 1000 : 10;
+            const maxMiles = (100 / 3600) * Math.max(secsSinceLast, 10);
+            if (delta < maxMiles) newMiles += delta;
+          }
+          await AsyncStorage.setItem('activeTrip', JSON.stringify({
+            ...tripData,
+            lastLat: latitude,
+            lastLon: longitude,
+            miles: newMiles,
+            lastSpeedTime: now,
+          }));
+          setActiveTrip(prev => prev ? { ...prev, miles: newMiles, stale: false, lastGps: Date.now() } : prev);
+        } catch {}
+      }
+    );
+
+    // Start background task
+    await Location.startLocationUpdatesAsync('background-location-task', {
+      accuracy: Location.Accuracy.BestForNavigation,
+      activityType: Location.ActivityType.AutomotiveNavigation,
+      timeInterval: 10000,
+      distanceInterval: 0,
+      foregroundService: {
+        notificationTitle: 'Trip in Progress',
+        notificationBody: 'Discovery Driver Portal is tracking your location.',
+        notificationColor: '#f5a623',
+      },
+      pausesUpdatesAutomatically: false,
+      showsBackgroundLocationIndicator: true,
+    });
+
+    Alert.alert('Tracking Resumed', 'Your trip is being tracked again. Existing miles and hours have been preserved.');
+  }
+
   async function handleStart(trip) {
     const permitted = await requestPermissions();
     if (!permitted) return;

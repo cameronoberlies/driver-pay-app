@@ -52,21 +52,50 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get all admin/caller push tokens
-    const { data: admins, error: adminsError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, push_token')
-      .in('role', ['admin', 'manager', 'caller'])
-      .not('push_token', 'is', null);
+    // For 'reopened' action, target the designated driver instead of admins.
+    // Other actions notify admins only.
+    let recipients: any[] | null = null;
+    let recipientsError: any = null;
 
-    if (adminsError || !admins || admins.length === 0) {
+    if (action === 'reopened') {
+      // Get the designated driver's push token
+      const { data: tripFull } = await supabaseAdmin
+        .from('trips')
+        .select('designated_driver_id, driver_id')
+        .eq('id', trip_id)
+        .single();
+      const targetDriverId = tripFull?.designated_driver_id || tripFull?.driver_id;
+      if (!targetDriverId) {
+        return new Response(
+          JSON.stringify({ success: true, sent: 0, message: 'No designated driver' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+      const result = await supabaseAdmin
+        .from('profiles')
+        .select('id, push_token')
+        .eq('id', targetDriverId)
+        .not('push_token', 'is', null);
+      recipients = result.data;
+      recipientsError = result.error;
+    } else {
+      const result = await supabaseAdmin
+        .from('profiles')
+        .select('id, push_token')
+        .in('role', ['admin', 'manager', 'caller'])
+        .not('push_token', 'is', null);
+      recipients = result.data;
+      recipientsError = result.error;
+    }
+
+    if (recipientsError || !recipients || recipients.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, sent: 0, message: 'No admin recipients' }),
+        JSON.stringify({ success: true, sent: 0, message: 'No recipients' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    const pushTokens = admins
+    const pushTokens = recipients
       .map((a) => a.push_token)
       .filter((t): t is string => !!t && t.startsWith('ExponentPushToken'));
 
@@ -123,6 +152,10 @@ Deno.serve(async (req) => {
       case 'resumed':
         title = '▶ Trip Resumed';
         body = `${driver.name} resumed their ${tripType} trip to ${trip.city}`;
+        break;
+      case 'reopened':
+        title = '🔄 Trip Reopened';
+        body = `Your trip to ${trip.city} has been reopened. Open the app to resume tracking.`;
         break;
       default:
         title = 'Trip Update';
