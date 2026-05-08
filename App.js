@@ -285,6 +285,26 @@ async function registerForPushNotifications(userId) {
   }
 }
 
+// Check Bluetooth state and save to profiles. Wrapped in try/require so old
+// runtimes (1.0.7) without react-native-ble-plx don't crash.
+async function checkBluetoothStatus(userId) {
+  try {
+    const { BleManager } = require('react-native-ble-plx');
+    const mgr = new BleManager();
+    const state = await mgr.state();
+    // Map BLE states to simple values: enabled, disabled, unauthorized, unsupported
+    let status = 'unknown';
+    if (state === 'PoweredOn') status = 'enabled';
+    else if (state === 'PoweredOff') status = 'disabled';
+    else if (state === 'Unauthorized') status = 'unauthorized';
+    else if (state === 'Unsupported') status = 'unsupported';
+    await supabase.from('profiles').update({ bluetooth_status: status }).eq('id', userId);
+    mgr.destroy();
+  } catch (e) {
+    // Old runtime without BLE module — skip silently
+  }
+}
+
 export default function App() {
   const { updateAvailable } = useUpdateChecker();
   const [session, setSession] = useState(null);
@@ -327,6 +347,7 @@ export default function App() {
         // Default to "home" for admin/caller, "dashboard" for driver
         setActiveTab(prev => prev ?? (["admin", "manager", "caller"].includes(data?.role) ? "home" : "dashboard"));
         registerForPushNotifications(s.user.id);
+        checkBluetoothStatus(s.user.id);
       }
     } catch (e) {
       console.log("loadProfile error:", e);
