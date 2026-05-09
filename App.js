@@ -270,9 +270,21 @@ async function registerForPushNotifications(userId) {
     } catch {}
 
     const appVersion = Constants.expoConfig?.version || Constants.manifest?.version || null;
+    // Bundle ID tells us if this is the Play Store build (com.cameronoberlies.driverpay)
+    // or the sideload build (com.driverportal.app)
+    let bundleId = null;
+    try {
+      bundleId = require('expo-application').applicationId || null;
+    } catch {}
     const { error } = await supabase
       .from("profiles")
-      .update({ push_token: token, device_os: Platform.OS, app_update_id: updateId, app_version: appVersion })
+      .update({
+        push_token: token,
+        device_os: Platform.OS,
+        app_update_id: updateId,
+        app_version: appVersion,
+        bundle_id: bundleId,
+      })
       .eq("id", userId);
     console.log("Push: saved to Supabase, error:", error);
     if (error) {
@@ -285,21 +297,24 @@ async function registerForPushNotifications(userId) {
   }
 }
 
-// Check Bluetooth state and save to profiles. Wrapped in try/require so old
-// runtimes (1.0.7) without react-native-ble-plx don't crash.
+// Check Bluetooth state and save to profiles. Reuses the existing obdBLE
+// singleton instead of creating a new BleManager — destroying a separate
+// instance would invalidate the singleton on Android.
 async function checkBluetoothStatus(userId) {
   try {
-    const { BleManager } = require('react-native-ble-plx');
-    const mgr = new BleManager();
-    const state = await mgr.state();
-    // Map BLE states to simple values: enabled, disabled, unauthorized, unsupported
+    const { obdBLE } = require('./lib/obd2');
+    const ready = await obdBLE.init();
     let status = 'unknown';
-    if (state === 'PoweredOn') status = 'enabled';
-    else if (state === 'PoweredOff') status = 'disabled';
-    else if (state === 'Unauthorized') status = 'unauthorized';
-    else if (state === 'Unsupported') status = 'unsupported';
+    if (ready) {
+      status = 'enabled';
+    } else if (obdBLE.bleManager) {
+      const state = await obdBLE.bleManager.state();
+      if (state === 'PoweredOff') status = 'disabled';
+      else if (state === 'Unauthorized') status = 'unauthorized';
+      else if (state === 'Unsupported') status = 'unsupported';
+    }
     await supabase.from('profiles').update({ bluetooth_status: status }).eq('id', userId);
-    mgr.destroy();
+    // Don't destroy — singleton is shared with OBD trip flow
   } catch (e) {
     // Old runtime without BLE module — skip silently
   }
