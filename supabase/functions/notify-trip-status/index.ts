@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       { auth: { persistSession: false } },
     );
 
-    const { trip_id, driver_id, action } = await req.json();
+    const { trip_id, driver_id, action, metadata: actionMetadata } = await req.json();
 
     if (!trip_id || !driver_id || !action) {
       return new Response(
@@ -157,6 +157,14 @@ Deno.serve(async (req) => {
         title = '🔄 Trip Reopened';
         body = `Your trip to ${trip.city} has been reopened. Open the app to resume tracking.`;
         break;
+      case 'dtc_detected': {
+        const codes = (actionMetadata?.codes && Array.isArray(actionMetadata.codes))
+          ? actionMetadata.codes.join(', ')
+          : 'unknown';
+        title = '⚠ Engine Code Detected';
+        body = `${driver.name}'s vehicle reported engine code(s): ${codes} on trip to ${trip.city}`;
+        break;
+      }
       default:
         title = 'Trip Update';
         body = `${driver.name}'s trip to ${trip.city} was updated`;
