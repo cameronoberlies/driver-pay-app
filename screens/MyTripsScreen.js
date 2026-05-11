@@ -227,13 +227,29 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
 
     // Stop detection is handled server-side via cron — no client-side stop logic
 
-    // Write to database
-    const { error: dbError } = await client.from('driver_locations').upsert({
+    // Read OBD snapshot persisted by OBDDataManager — fresh values when
+    // the app is backgrounded (BG task can't access the BLE singleton directly)
+    const bgLocUpdate = {
       driver_id: userId,
       latitude,
       longitude,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'driver_id' });
+    };
+    try {
+      const obdRaw = await AsyncStorage.getItem('obdSnapshot');
+      if (obdRaw) {
+        const obd = JSON.parse(obdRaw);
+        // Only use if updated within last 30s — stale data isn't useful
+        if (obd?.timestamp && Date.now() - obd.timestamp < 30000) {
+          if (obd.speed != null) bgLocUpdate.obd_speed = obd.speed;
+          if (obd.rpm != null) bgLocUpdate.obd_rpm = obd.rpm;
+          if (obd.fuelLevel != null) bgLocUpdate.obd_fuel = obd.fuelLevel;
+        }
+      }
+    } catch {}
+
+    // Write to database
+    const { error: dbError } = await client.from('driver_locations').upsert(bgLocUpdate, { onConflict: 'driver_id' });
 
     if (dbError) {
       console.log('[BG Task] DB write error:', dbError.message);
