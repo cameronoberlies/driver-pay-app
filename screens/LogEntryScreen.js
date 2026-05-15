@@ -238,10 +238,13 @@ export default function LogEntryScreen({ userRole }) {
     setPending(prev => prev.filter(e => e.id !== entryId));
   }
 
-  // Compute actual cost from itemized fields + driver pay
+  // Driver 1's actual_cost on their entry = pay1 + all itemized shared costs.
+  // Driver 2's row carries pay2 only. Sum across both = true business total.
   const logActualCost = [
     form.flight_cost, form.rideshare_cost, form.fuel_cost, form.other_cost, form.pay,
   ].reduce((sum, v) => sum + (Number(v) || 0), 0);
+  // Form preview includes both pays so the user sees the full trip cost.
+  const logActualCostTotal = logActualCost + (Number(form.pay2) || 0);
 
   async function handleSave() {
     if (!form.driver_id || (canSeePay && !form.pay)) {
@@ -530,7 +533,7 @@ export default function LogEntryScreen({ userRole }) {
 
         <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textTertiary }}>Total Actual Cost</Text>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>${logActualCost.toFixed(2)}</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>${logActualCostTotal.toFixed(2)}</Text>
         </View>
       </View>
 
