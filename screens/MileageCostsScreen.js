@@ -7,18 +7,55 @@ import { LineChart, PieChart } from 'react-native-chart-kit';
 import { supabase } from '../lib/supabase';
 import useResponsive from '../lib/useResponsive';
 
-function getWeekBounds(weeksAgo = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() - (weeksAgo * 7));
-  const day = d.getDay();
-  const diffToWed = day >= 3 ? day - 3 : day + 4;
-  const wed = new Date(d);
-  wed.setDate(d.getDate() - diffToWed);
-  wed.setHours(0, 0, 0, 0);
-  const tue = new Date(wed);
-  tue.setDate(wed.getDate() + 6);
-  tue.setHours(23, 59, 59, 999);
-  return { start: wed, end: tue };
+// Time-range buckets for trend charts. Each range produces an array of
+// {start, end, label} buckets ending today; charts iterate the buckets and
+// labels with empty strings are skipped by the renderer to reduce clutter.
+const RANGE_OPTIONS = ['1W', '1M', '3M', '6M', '1Y'];
+
+function getRangeBuckets(range) {
+  const now = new Date();
+  const buckets = [];
+
+  if (range === '1W') {
+    for (let i = 6; i >= 0; i--) {
+      const start = new Date(now); start.setDate(now.getDate() - i); start.setHours(0, 0, 0, 0);
+      const end = new Date(start); end.setHours(23, 59, 59, 999);
+      buckets.push({ start, end, label: start.toLocaleDateString('en-US', { weekday: 'short' }) });
+    }
+  } else if (range === '1M') {
+    for (let i = 3; i >= 0; i--) {
+      const end = new Date(now); end.setDate(now.getDate() - i * 7); end.setHours(23, 59, 59, 999);
+      const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0, 0, 0, 0);
+      buckets.push({ start, end, label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) });
+    }
+  } else if (range === '3M') {
+    for (let i = 11; i >= 0; i--) {
+      const end = new Date(now); end.setDate(now.getDate() - i * 7); end.setHours(23, 59, 59, 999);
+      const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0, 0, 0, 0);
+      buckets.push({ start, end, label: i % 3 === 0 ? start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '' });
+    }
+  } else if (range === '6M') {
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1, 0, 0, 0, 0);
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      buckets.push({ start, end, label: start.toLocaleDateString('en-US', { month: 'short' }) });
+    }
+  } else { // 1Y
+    for (let i = 11; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1, 0, 0, 0, 0);
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      buckets.push({ start, end, label: i % 2 === 0 ? start.toLocaleDateString('en-US', { month: 'short' }) : '' });
+    }
+  }
+
+  return { rangeStart: buckets[0].start, rangeEnd: buckets[buckets.length - 1].end, buckets };
+}
+
+function formatRangeLabel(rangeStart, rangeEnd) {
+  const sameYear = rangeStart.getFullYear() === rangeEnd.getFullYear();
+  const startStr = rangeStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric' });
+  const endStr = rangeEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${startStr} – ${endStr}`;
 }
 
 function fmtMoney(n) { return '$' + Number(n||0).toLocaleString('en-US', { minimumFractionDigits: 2 }); }
@@ -55,6 +92,7 @@ export default function MileageCostsScreen() {
   const [error, setError] = useState(false);
   const [activeChart, setActiveChart] = useState(0); // 0=variance, 1=miles, 2=efficiency, 3=trip types, 4=speed
   const [speedDriver, setSpeedDriver] = useState('all');
+  const [range, setRange] = useState('1W');
 
   async function load() {
     setError(false);
@@ -81,12 +119,12 @@ export default function MileageCostsScreen() {
   useEffect(() => { load(); }, []);
   function onRefresh() { setRefreshing(true); load(); }
 
-  const { start: wkStart, end: wkEnd } = getWeekBounds();
+  const { rangeStart, rangeEnd, buckets } = getRangeBuckets(range);
   const drivers = profiles.filter(p => p.role === 'driver');
 
   const weekEntries = entries.filter(e => {
     const d = new Date(e.date + 'T12:00:00');
-    return d >= wkStart && d <= wkEnd;
+    return d >= rangeStart && d <= rangeEnd;
   });
 
   const totalActual = weekEntries.reduce((t, e) => t + Number(e.actual_cost ?? 0), 0);
@@ -94,102 +132,54 @@ export default function MileageCostsScreen() {
   const totalMiles = weekEntries.reduce((t, e) => t + Number(e.miles ?? 0), 0);
   const variance = totalActual - totalEstimated;
 
-  // ── Chart 1: Cost Variance Trend (8 weeks) ──────────────────────────────
-  const varianceTrendData = (() => {
-    const weeks = [];
-    for (let i = 7; i >= 0; i--) {
-      const { start, end } = getWeekBounds(i);
-      const wkEntries = entries.filter(e => {
-        const d = new Date(e.date + 'T12:00:00');
-        return d >= start && d <= end;
-      });
-      const actual = wkEntries.reduce((t, e) => t + Number(e.actual_cost ?? 0), 0);
-      const estimated = wkEntries.reduce((t, e) => t + Number(e.estimated_cost ?? 0), 0);
-      weeks.push({
-        label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        actual,
-        estimated,
-      });
-    }
-    return {
-      labels: weeks.map(w => w.label),
-      datasets: [
-        {
-          data: weeks.map(w => w.actual),
-          color: (opacity = 1) => `rgba(232, 90, 74, ${opacity})`, // red
-          strokeWidth: 2,
-        },
-        {
-          data: weeks.map(w => w.estimated),
-          color: (opacity = 1) => `rgba(245, 166, 35, ${opacity})`, // gold
-          strokeWidth: 2,
-        },
-      ],
-      legend: ['Actual', 'Estimated'],
-    };
-  })();
+  // ── Bucketed entry aggregates (one pass per chart) ──────────────────────
+  const bucketAggregates = buckets.map(b => {
+    const inBucket = entries.filter(e => {
+      const d = new Date(e.date + 'T12:00:00');
+      return d >= b.start && d <= b.end;
+    });
+    const miles = inBucket.reduce((t, e) => t + Number(e.miles ?? 0), 0);
+    const actual = inBucket.reduce((t, e) => t + Number(e.actual_cost ?? 0), 0);
+    const estimated = inBucket.reduce((t, e) => t + Number(e.estimated_cost ?? 0), 0);
+    return { label: b.label, miles, actual, estimated };
+  });
 
-  // ── Chart 2: Weekly Mileage Trend (8 weeks) ────────────────────────────
-  const milesTrendData = (() => {
-    const weeks = [];
-    for (let i = 7; i >= 0; i--) {
-      const { start, end } = getWeekBounds(i);
-      const wkEntries = entries.filter(e => {
-        const d = new Date(e.date + 'T12:00:00');
-        return d >= start && d <= end;
-      });
-      const miles = wkEntries.reduce((t, e) => t + Number(e.miles ?? 0), 0);
-      weeks.push({
-        label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        miles,
-      });
-    }
-    return {
-      labels: weeks.map(w => w.label),
-      datasets: [{
-        data: weeks.map(w => w.miles),
-        color: (opacity = 1) => `rgba(59, 140, 247, ${opacity})`,
-        strokeWidth: 2,
-      }],
-    };
-  })();
+  // ── Chart 1: Cost Variance Trend ────────────────────────────────────────
+  const varianceTrendData = {
+    labels: bucketAggregates.map(b => b.label),
+    datasets: [
+      { data: bucketAggregates.map(b => b.actual),    color: (o = 1) => `rgba(232, 90, 74, ${o})`,  strokeWidth: 2 },
+      { data: bucketAggregates.map(b => b.estimated), color: (o = 1) => `rgba(245, 166, 35, ${o})`, strokeWidth: 2 },
+    ],
+    legend: ['Actual', 'Estimated'],
+  };
 
-  // ── Chart 3: Cost per Mile Efficiency (total) ───────────────────────────
+  // ── Chart 2: Mileage Trend ──────────────────────────────────────────────
+  const milesTrendData = {
+    labels: bucketAggregates.map(b => b.label),
+    datasets: [{ data: bucketAggregates.map(b => b.miles), color: (o = 1) => `rgba(59, 140, 247, ${o})`, strokeWidth: 2 }],
+  };
+
+  // ── Chart 3: Cost per Mile Efficiency ───────────────────────────────────
   const totalCostPerMile = totalMiles > 0 ? totalActual / totalMiles : 0;
-  const efficiencyTrend = (() => {
-    const weeks = [];
-    for (let i = 7; i >= 0; i--) {
-      const { start, end } = getWeekBounds(i);
-      const wkEntries = entries.filter(e => {
-        const d = new Date(e.date + 'T12:00:00');
-        return d >= start && d <= end;
-      });
-      const miles = wkEntries.reduce((t, e) => t + Number(e.miles ?? 0), 0);
-      const actual = wkEntries.reduce((t, e) => t + Number(e.actual_cost ?? 0), 0);
-      weeks.push({
-        label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        cpm: miles > 0 ? actual / miles : 0,
-      });
-    }
-    return {
-      labels: weeks.map(w => w.label),
-      datasets: [{
-        data: weeks.map(w => parseFloat(w.cpm.toFixed(2))),
-        color: (opacity = 1) => `rgba(74, 232, 133, ${opacity})`,
-        strokeWidth: 2,
-      }],
-    };
-  })();
+  const efficiencyTrend = {
+    labels: bucketAggregates.map(b => b.label),
+    datasets: [{
+      data: bucketAggregates.map(b => parseFloat((b.miles > 0 ? b.actual / b.miles : 0).toFixed(2))),
+      color: (o = 1) => `rgba(74, 232, 133, ${o})`,
+      strokeWidth: 2,
+    }],
+  };
 
   // ── Chart 4: Trip Type Breakdown (pie) ──────────────────────────────────
   const tripTypeData = (() => {
-    const weekTrips = trips.filter(t => {
+    const rangeTrips = trips.filter(t => {
       if (!t.actual_start) return false;
       const d = new Date(t.actual_start);
-      return d >= wkStart && d <= wkEnd;
+      return d >= rangeStart && d <= rangeEnd;
     });
-    const flyCount = weekTrips.filter(t => t.trip_type === 'fly').length;
-    const driveCount = weekTrips.filter(t => t.trip_type === 'drive').length;
+    const flyCount = rangeTrips.filter(t => t.trip_type === 'fly').length;
+    const driveCount = rangeTrips.filter(t => t.trip_type === 'drive').length;
 
     if (flyCount === 0 && driveCount === 0) {
       return [{ name: 'No trips', population: 1, color: '#1e1e1e', legendFontColor: '#555' }];
@@ -205,9 +195,13 @@ export default function MileageCostsScreen() {
   const speedChartData = (() => {
     const tripsWithSpeed = trips
       .filter(t => t.speed_data && t.actual_start)
+      .filter(t => {
+        const d = new Date(t.actual_start);
+        return d >= rangeStart && d <= rangeEnd;
+      })
       .filter(t => speedDriver === 'all' || t.driver_id === speedDriver || t.designated_driver_id === speedDriver)
       .sort((a, b) => new Date(a.actual_start) - new Date(b.actual_start))
-      .slice(-15); // Last 15 trips
+      .slice(-20); // cap visible points
 
     if (tripsWithSpeed.length === 0) {
       return null;
@@ -254,10 +248,20 @@ export default function MileageCostsScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f5a623" />}>
 
       {/* Header */}
-      <Text style={s.period}>
-        {wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} –{' '}
-        {wkEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-      </Text>
+      <Text style={s.period}>{formatRangeLabel(rangeStart, rangeEnd)}</Text>
+
+      {/* Range selector */}
+      <View style={s.rangeRow}>
+        {RANGE_OPTIONS.map(r => (
+          <TouchableOpacity
+            key={r}
+            style={[s.rangePill, range === r && s.rangePillActive]}
+            onPress={() => setRange(r)}
+          >
+            <Text style={[s.rangePillText, range === r && s.rangePillTextActive]}>{r}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {/* Summary Stats */}
       <View style={s.row}>
@@ -321,7 +325,7 @@ export default function MileageCostsScreen() {
       <View style={s.chartContainer}>
         {activeChart === 0 && (
           <View>
-            <Text style={s.chartTitle}>Cost Variance Trend (8 Weeks)</Text>
+            <Text style={s.chartTitle}>Cost Variance Trend</Text>
             <LineChart
               data={varianceTrendData}
               width={chartWidth}
@@ -341,7 +345,7 @@ export default function MileageCostsScreen() {
 
         {activeChart === 1 && (
           <View>
-            <Text style={s.chartTitle}>Weekly Mileage Trend (8 Weeks)</Text>
+            <Text style={s.chartTitle}>Mileage Trend</Text>
             <LineChart
               data={milesTrendData}
               width={chartWidth}
@@ -360,9 +364,9 @@ export default function MileageCostsScreen() {
 
         {activeChart === 2 && (
           <View>
-            <Text style={s.chartTitle}>Cost per Mile (8 Weeks)</Text>
+            <Text style={s.chartTitle}>Cost per Mile</Text>
             <View style={s.effSummary}>
-              <Text style={s.effSummaryLabel}>THIS WEEK</Text>
+              <Text style={s.effSummaryLabel}>{range}</Text>
               <Text style={s.effSummaryValue}>{fmtMoney(totalCostPerMile)}/mi</Text>
               <Text style={s.effSummaryDetail}>{totalMiles.toFixed(0)} mi · {fmtMoney(totalActual)} actual</Text>
             </View>
@@ -388,7 +392,7 @@ export default function MileageCostsScreen() {
 
         {activeChart === 3 && (
           <View>
-            <Text style={s.chartTitle}>Trip Type Breakdown (This Week)</Text>
+            <Text style={s.chartTitle}>Trip Type Breakdown</Text>
             <PieChart
               data={tripTypeData}
               width={chartWidth}
@@ -477,7 +481,18 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingTop: 20, paddingBottom: 40 },
   center: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' },
-  period: { fontSize: 11, color: '#555', letterSpacing: 1, marginBottom: 20 },
+  period: { fontSize: 11, color: '#555', letterSpacing: 1, marginBottom: 12 },
+
+  // Range pills (1W / 1M / 3M / 6M / 1Y)
+  rangeRow: { flexDirection: 'row', gap: 6, marginBottom: 20 },
+  rangePill: {
+    flex: 1, paddingVertical: 8, alignItems: 'center',
+    backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e',
+  },
+  rangePillActive: { backgroundColor: 'rgba(245, 166, 35, 0.15)', borderColor: '#f5a623' },
+  rangePillText: { fontSize: 10, fontWeight: '700', letterSpacing: 1, color: '#555' },
+  rangePillTextActive: { color: '#f5a623' },
+
   row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   statCard: { flex: 1, backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e', padding: 14 },
   statLabel: { fontSize: 9, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 4 },
