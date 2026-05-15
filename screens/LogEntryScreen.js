@@ -153,6 +153,8 @@ export default function LogEntryScreen({ userRole }) {
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     driver_id: '',
+    second_driver_id: '',
+    pay2: '',
     date: today,
     pay: '',
     hours: '',
@@ -234,10 +236,8 @@ export default function LogEntryScreen({ userRole }) {
       fuel_cost: form.fuel_cost ? Number(form.fuel_cost) : null,
       other_cost: form.other_cost ? Number(form.other_cost) : null,
     };
-    const { error } = await supabase.from('entries').insert({
-      driver_id: form.driver_id,
+    const baseEntry = {
       date: form.date,
-      pay: Number(form.pay),
       hours: form.hours ? Number(form.hours) : null,
       miles: form.miles ? Number(form.miles) : 0,
       actual_cost: logActualCost,
@@ -248,12 +248,30 @@ export default function LogEntryScreen({ userRole }) {
       stock_numbers: form.stock_numbers || null,
       recon_missed: form.recon_missed,
       ...costFields,
+    };
+    const { error } = await supabase.from('entries').insert({
+      ...baseEntry,
+      driver_id: form.driver_id,
+      pay: Number(form.pay),
     });
+    if (error) { setSaving(false); Alert.alert('Save Failed', error.message); return; }
+
+    // Drive trips have two drivers — log a second entry for the partner so
+    // pay/hours show up on their dashboard too. Costs aren't duplicated.
+    if (form.trip_type === 'drive' && form.second_driver_id) {
+      await supabase.from('entries').insert({
+        ...baseEntry,
+        driver_id: form.second_driver_id,
+        pay: form.pay2 ? Number(form.pay2) : 0,
+        flight_cost: null, rideshare_cost: null, fuel_cost: null, other_cost: null,
+        actual_cost: form.pay2 ? Number(form.pay2) : 0,
+      });
+    }
+
     setSaving(false);
-    if (error) { Alert.alert('Save Failed', error.message); return; }
     setSaved(true);
     setForm(f => ({
-      ...f, pay: '', hours: '', miles: '', estimated_cost: '',
+      ...f, pay: '', pay2: '', second_driver_id: '', hours: '', miles: '', estimated_cost: '',
       flight_cost: '', rideshare_cost: '', fuel_cost: '', other_cost: '',
       city: '', crm_id: '', trip_type: '', stock_numbers: '', dealer_plate: '', chase_vehicle_stock: '', recon_missed: false,
     }));
@@ -397,6 +415,42 @@ export default function LogEntryScreen({ userRole }) {
 
       {form.trip_type === 'drive' && (
         <>
+          <Text style={s.label}>SECOND DRIVER</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.xs }}>
+            <TouchableOpacity
+              style={[s.pill, !form.second_driver_id && s.pillActive]}
+              onPress={() => set('second_driver_id', '')}
+            >
+              <Text style={[s.pillText, !form.second_driver_id && s.pillTextActive]}>— None —</Text>
+            </TouchableOpacity>
+            {drivers.filter(d => d.id !== form.driver_id).map(d => (
+              <TouchableOpacity
+                key={d.id}
+                style={[s.pill, form.second_driver_id === d.id && s.pillActive]}
+                onPress={() => set('second_driver_id', d.id)}
+              >
+                <Text style={[s.pillText, form.second_driver_id === d.id && s.pillTextActive]}>
+                  {d.name}
+                  {d.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {form.second_driver_id && canSeePay && (
+            <>
+              <Text style={s.label}>PAY — SECOND DRIVER ($)</Text>
+              <TextInput
+                style={s.input}
+                value={form.pay2}
+                onChangeText={v => set('pay2', v)}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={colors.textMuted}
+              />
+            </>
+          )}
+
           <Text style={s.label}>CHASE VEHICLE</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.xs }}>
             <TouchableOpacity
