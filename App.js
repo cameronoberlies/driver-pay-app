@@ -79,7 +79,7 @@ const ADMIN_TABS = [
   { id: "log", label: "Log Entry" },
   { id: "entries", label: "All Entries" },
   { id: "fleet", label: "Fleet" },
-  { id: "mileage", label: "Mileage Costs" },
+  { id: "mileage", label: "Analytics" },
   { id: "availability", label: "Availability" },
   { id: "flights", label: "Live Flights" },
   { id: "tracking", label: "Tracking Health" },
