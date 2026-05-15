@@ -241,9 +241,11 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
         const obd = JSON.parse(obdRaw);
         // Only use if updated within last 30s — stale data isn't useful
         if (obd?.timestamp && Date.now() - obd.timestamp < 30000) {
-          if (obd.speed != null) bgLocUpdate.obd_speed = obd.speed;
-          if (obd.rpm != null) bgLocUpdate.obd_rpm = obd.rpm;
-          if (obd.fuelLevel != null) bgLocUpdate.obd_fuel = obd.fuelLevel;
+          let wroteOBD = false;
+          if (obd.speed != null) { bgLocUpdate.obd_speed = obd.speed; wroteOBD = true; }
+          if (obd.rpm != null) { bgLocUpdate.obd_rpm = obd.rpm; wroteOBD = true; }
+          if (obd.fuelLevel != null) { bgLocUpdate.obd_fuel = obd.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) bgLocUpdate.obd_updated_at = new Date().toISOString();
         }
       }
     } catch {}
@@ -998,9 +1000,11 @@ export default function MyTripsScreen({ session, navigation }) {
         };
         if (obdBLE.isConnected()) {
           const snap = obdData.getSnapshot();
-          if (snap.speed != null) locUpdate.obd_speed = snap.speed;
-          if (snap.rpm != null) locUpdate.obd_rpm = snap.rpm;
-          if (snap.fuelLevel != null) locUpdate.obd_fuel = snap.fuelLevel;
+          let wroteOBD = false;
+          if (snap.speed != null) { locUpdate.obd_speed = snap.speed; wroteOBD = true; }
+          if (snap.rpm != null) { locUpdate.obd_rpm = snap.rpm; wroteOBD = true; }
+          if (snap.fuelLevel != null) { locUpdate.obd_fuel = snap.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) locUpdate.obd_updated_at = new Date().toISOString();
         }
         await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
 
@@ -1057,6 +1061,18 @@ export default function MyTripsScreen({ session, navigation }) {
       .eq('id', trip.id);
 
     if (err) { Alert.alert('Failed to start trip', err.message); return; }
+
+    // Clear any leftover OBD values from a previous trip so the live map
+    // doesn't show a stale "0 mph" until fresh PIDs arrive.
+    try {
+      await supabase.from('driver_locations').upsert({
+        driver_id: session.user.id,
+        obd_speed: null,
+        obd_rpm: null,
+        obd_fuel: null,
+        obd_updated_at: null,
+      }, { onConflict: 'driver_id' });
+    } catch {}
 
     notifyTripStatus(trip.id, 'started');
 
@@ -1139,9 +1155,11 @@ export default function MyTripsScreen({ session, navigation }) {
         // Include live OBD readings if connected
         if (obdBLE.isConnected()) {
           const snap = obdData.getSnapshot();
-          if (snap.speed != null) locUpdate.obd_speed = snap.speed;
-          if (snap.rpm != null) locUpdate.obd_rpm = snap.rpm;
-          if (snap.fuelLevel != null) locUpdate.obd_fuel = snap.fuelLevel;
+          let wroteOBD = false;
+          if (snap.speed != null) { locUpdate.obd_speed = snap.speed; wroteOBD = true; }
+          if (snap.rpm != null) { locUpdate.obd_rpm = snap.rpm; wroteOBD = true; }
+          if (snap.fuelLevel != null) { locUpdate.obd_fuel = snap.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) locUpdate.obd_updated_at = new Date().toISOString();
         }
         await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
 
@@ -1326,9 +1344,11 @@ export default function MyTripsScreen({ session, navigation }) {
         };
         if (obdBLE.isConnected()) {
           const snap = obdData.getSnapshot();
-          if (snap.speed != null) locUpdate.obd_speed = snap.speed;
-          if (snap.rpm != null) locUpdate.obd_rpm = snap.rpm;
-          if (snap.fuelLevel != null) locUpdate.obd_fuel = snap.fuelLevel;
+          let wroteOBD = false;
+          if (snap.speed != null) { locUpdate.obd_speed = snap.speed; wroteOBD = true; }
+          if (snap.rpm != null) { locUpdate.obd_rpm = snap.rpm; wroteOBD = true; }
+          if (snap.fuelLevel != null) { locUpdate.obd_fuel = snap.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) locUpdate.obd_updated_at = new Date().toISOString();
         }
         await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
 
