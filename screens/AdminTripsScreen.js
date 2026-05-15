@@ -1750,36 +1750,6 @@ function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, avai
               )}
             </View>
 
-            {/* Speed Analytics */}
-            {false && trip.speed_data && trip.speed_data.top_speed > 0 && (trip.status === 'completed' || trip.status === 'finalized') && (
-              <View style={s.speedCards}>
-                <View style={s.speedCard}>
-                  <Text style={s.speedCardLabel}>TOP SPEED</Text>
-                  <Text style={s.speedCardValue}>{trip.speed_data.top_speed}</Text>
-                  <Text style={s.speedCardUnit}>mph</Text>
-                </View>
-                <View style={s.speedCard}>
-                  <Text style={s.speedCardLabel}>AVG SPEED</Text>
-                  <Text style={s.speedCardValue}>{trip.speed_data.avg_speed}</Text>
-                  <Text style={s.speedCardUnit}>mph</Text>
-                </View>
-                <View style={[s.speedCard, trip.speed_data.seconds_over_80 > 0 && s.speedCardWarn]}>
-                  <Text style={s.speedCardLabel}>OVER 80</Text>
-                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_80 > 0 && { color: colors.warning }]}>
-                    {Math.round(trip.speed_data.seconds_over_80 / 60)}
-                  </Text>
-                  <Text style={s.speedCardUnit}>min</Text>
-                </View>
-                <View style={[s.speedCard, trip.speed_data.seconds_over_90 > 0 && s.speedCardDanger]}>
-                  <Text style={s.speedCardLabel}>OVER 90</Text>
-                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_90 > 0 && { color: colors.error }]}>
-                    {Math.round(trip.speed_data.seconds_over_90 / 60)}
-                  </Text>
-                  <Text style={s.speedCardUnit}>min</Text>
-                </View>
-              </View>
-            )}
-
             {/* Driver 1 */}
             <Text style={s.reassignSectionLabel}>ASSIGN DRIVER</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -2023,35 +1993,6 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized, canSeePay 
           </Text>
 
           <ScrollView style={{ maxHeight: 400 }} keyboardShouldPersistTaps="handled">
-            {/* Speed Analytics */}
-            {false && trip.speed_data && trip.speed_data.top_speed > 0 && (
-              <View style={s.speedCards}>
-                <View style={s.speedCard}>
-                  <Text style={s.speedCardLabel}>TOP SPEED</Text>
-                  <Text style={s.speedCardValue}>{trip.speed_data.top_speed}</Text>
-                  <Text style={s.speedCardUnit}>mph</Text>
-                </View>
-                <View style={s.speedCard}>
-                  <Text style={s.speedCardLabel}>AVG SPEED</Text>
-                  <Text style={s.speedCardValue}>{trip.speed_data.avg_speed}</Text>
-                  <Text style={s.speedCardUnit}>mph</Text>
-                </View>
-                <View style={[s.speedCard, trip.speed_data.seconds_over_80 > 0 && s.speedCardWarn]}>
-                  <Text style={s.speedCardLabel}>OVER 80</Text>
-                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_80 > 0 && { color: colors.warning }]}>
-                    {Math.round(trip.speed_data.seconds_over_80 / 60)}
-                  </Text>
-                  <Text style={s.speedCardUnit}>min</Text>
-                </View>
-                <View style={[s.speedCard, trip.speed_data.seconds_over_90 > 0 && s.speedCardDanger]}>
-                  <Text style={s.speedCardLabel}>OVER 90</Text>
-                  <Text style={[s.speedCardValue, trip.speed_data.seconds_over_90 > 0 && { color: colors.error }]}>
-                    {Math.round(trip.speed_data.seconds_over_90 / 60)}
-                  </Text>
-                  <Text style={s.speedCardUnit}>min</Text>
-                </View>
-              </View>
-            )}
 
             {canSeePay && (
               <View style={s.modalField}>

@@ -194,7 +194,7 @@ export default function MileageCostsScreen() {
   // ── Chart 5: Speed by Driver Over Time ───────────────────────────────────
   const speedChartData = (() => {
     const tripsWithSpeed = trips
-      .filter(t => t.speed_data && t.actual_start)
+      .filter(t => t.obd_data?.max_speed != null && t.actual_start)
       .filter(t => {
         const d = new Date(t.actual_start);
         return d >= rangeStart && d <= rangeEnd;
@@ -213,12 +213,12 @@ export default function MileageCostsScreen() {
       ),
       datasets: [
         {
-          data: tripsWithSpeed.map(t => t.speed_data.top_speed || 0),
+          data: tripsWithSpeed.map(t => t.obd_data?.max_speed || 0),
           color: (opacity = 1) => `rgba(232, 90, 74, ${opacity})`,
           strokeWidth: 2,
         },
         {
-          data: tripsWithSpeed.map(t => t.speed_data.avg_speed || 0),
+          data: tripsWithSpeed.map(t => t.obd_data?.avg_speed || 0),
           color: (opacity = 1) => `rgba(245, 166, 35, ${opacity})`,
           strokeWidth: 2,
         },

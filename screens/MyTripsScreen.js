@@ -1675,7 +1675,8 @@ export default function MyTripsScreen({ session, navigation }) {
               miles: finalMiles,
               hours: finalDriveTime,
             };
-            if (speedData) tripUpdate.speed_data = speedData;
+            // GPS-derived speed_data intentionally not persisted — speed/rpm
+            // displays are OBD-only now to avoid the GPS-noise issues.
             if (obdSummary) tripUpdate.obd_data = obdSummary;
 
             const { error: err } = await supabase
