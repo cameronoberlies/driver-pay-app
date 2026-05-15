@@ -52,12 +52,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // For 'reopened' action, target the designated driver instead of admins.
-    // Other actions notify admins only.
+    // For driver-targeted actions ('reopened', 'fuel_reminder') push to the
+    // designated driver. All other actions notify admins/managers/callers.
     let recipients: any[] | null = null;
     let recipientsError: any = null;
 
-    if (action === 'reopened') {
+    if (action === 'reopened' || action === 'fuel_reminder') {
       // Get the designated driver's push token
       const { data: tripFull } = await supabaseAdmin
         .from('trips')
@@ -165,6 +165,10 @@ Deno.serve(async (req) => {
         body = `${driver.name}'s vehicle reported engine code(s): ${codes} on trip to ${trip.city}`;
         break;
       }
+      case 'fuel_reminder':
+        title = '⛽ Heading back';
+        body = `Remember to leave at least a 1/4 tank in the vehicle.`;
+        break;
       default:
         title = 'Trip Update';
         body = `${driver.name}'s trip to ${trip.city} was updated`;

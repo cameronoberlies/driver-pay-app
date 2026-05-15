@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     // ─── BATCH PRELOAD ────────────────────────────────────────────────────────
     const { data: activeTrips } = await supabase
       .from('trips')
-      .select('id, driver_id, designated_driver_id, second_driver_id, actual_start')
+      .select('id, driver_id, designated_driver_id, second_driver_id, actual_start, miles, city, fuel_reminder_sent, obd_data')
       .eq('status', 'in_progress')
 
     if (!activeTrips || activeTrips.length === 0) {
@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       { data: allOpenStops },
       { data: allStopStates },
     ] = await Promise.all([
-      supabase.from('driver_locations').select('driver_id, latitude, longitude, updated_at').in('driver_id', driverIds),
+      supabase.from('driver_locations').select('driver_id, latitude, longitude, updated_at, eta_miles').in('driver_id', driverIds),
       supabase.from('trip_stops').select('id, trip_id, driver_id, latitude, longitude, started_at').is('ended_at', null),
       supabase.from('driver_stop_state').select('*').in('driver_id', driverIds),
     ])
@@ -174,6 +174,44 @@ Deno.serve(async (req) => {
         autoEndedDriverIds.push(loc.driver_id)
         tripsAutoEnded++
       }
+    }
+
+    // ─── FUEL REMINDER ──────────────────────────────────────────────────────────
+    // Fire a one-time "leave 1/4 tank" push when an inbound driver is ~10mi away
+    // from the home dealership. Conditions:
+    //   - trip.miles > 25  → driver has actually been on a real trip (the
+    //     watershed that distinguishes "returning" from "just leaving")
+    //   - eta_miles < 13   → within ~10mi, with a 3mi buffer to absorb the
+    //     2-min cron cadence (at 60mph a driver covers ~2mi between ticks)
+    //   - obd_data.fuel_level > 25 suppresses (they don't need it)
+    //   - fuel_reminder_sent ensures one push per trip
+    let fuelRemindersSent = 0
+    for (const trip of activeTrips) {
+      if (trip.fuel_reminder_sent) continue
+      if ((trip.miles ?? 0) < 25) continue
+      if (autoEndedDriverIds.includes(trip.driver_id)) continue
+
+      const targetDriverId = trip.designated_driver_id || trip.driver_id
+      const loc = locations.find(l => l.driver_id === targetDriverId)
+      if (!loc || loc.eta_miles == null) continue
+      if (loc.eta_miles >= 13) continue
+
+      const fuelLevel = trip.obd_data?.fuel_level
+      if (typeof fuelLevel === 'number' && fuelLevel > 25) {
+        await supabase.from('trips').update({ fuel_reminder_sent: true }).eq('id', trip.id)
+        continue
+      }
+
+      await supabase.from('trips').update({ fuel_reminder_sent: true }).eq('id', trip.id)
+      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/notify-trip-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        },
+        body: JSON.stringify({ trip_id: trip.id, driver_id: targetDriverId, action: 'fuel_reminder' }),
+      })
+      fuelRemindersSent++
     }
 
     // ─── STOP DETECTION ─────────────────────────────────────────────────────────
@@ -336,6 +374,7 @@ Deno.serve(async (req) => {
         stops_created: stopsCreated,
         stops_closed: stopsClosed,
         trips_auto_ended: tripsAutoEnded,
+        fuel_reminders_sent: fuelRemindersSent,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
