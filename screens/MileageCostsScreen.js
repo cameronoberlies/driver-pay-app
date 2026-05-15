@@ -132,6 +132,15 @@ export default function MileageCostsScreen() {
   const totalMiles = weekEntries.reduce((t, e) => t + Number(e.miles ?? 0), 0);
   const variance = totalActual - totalEstimated;
 
+  // Itemized cost rollups — same filtered set as the KPI cards above.
+  const itemizedTotals = {
+    flight: weekEntries.reduce((s, e) => s + Number(e.flight_cost ?? 0), 0),
+    rideshare: weekEntries.reduce((s, e) => s + Number(e.rideshare_cost ?? 0), 0),
+    fuel: weekEntries.reduce((s, e) => s + Number(e.fuel_cost ?? 0), 0),
+    other: weekEntries.reduce((s, e) => s + Number(e.other_cost ?? 0), 0),
+    additional_recon: weekEntries.reduce((s, e) => s + Number(e.additional_recon_cost ?? 0), 0),
+  };
+
   // ── Bucketed entry aggregates (one pass per chart) ──────────────────────
   const bucketAggregates = buckets.map(b => {
     const inBucket = entries.filter(e => {
@@ -285,6 +294,29 @@ export default function MileageCostsScreen() {
             {variance >= 0 ? '+' : ''}{fmtMoney(variance)}
           </Text>
         </View>
+      </View>
+
+      {/* Itemized cost breakdown */}
+      <View style={s.itemizedCard}>
+        <Text style={s.itemizedTitle}>ITEMIZED BREAKDOWN</Text>
+        {Object.values(itemizedTotals).every(v => v === 0) ? (
+          <Text style={s.itemizedEmpty}>No itemized costs recorded in this period.</Text>
+        ) : (
+          <View style={s.itemizedRow}>
+            {[
+              { label: 'FLIGHT', value: itemizedTotals.flight, color: '#3b8cf7' },
+              { label: 'RIDESHARE', value: itemizedTotals.rideshare, color: '#3b8cf7' },
+              { label: 'FUEL', value: itemizedTotals.fuel, color: '#f5a623' },
+              { label: 'OTHER', value: itemizedTotals.other, color: '#f5a623' },
+              { label: 'ADDL RECON', value: itemizedTotals.additional_recon, color: '#e85a4a' },
+            ].filter(b => b.value > 0).map(b => (
+              <View key={b.label} style={s.itemizedItem}>
+                <Text style={s.itemizedItemLabel}>{b.label}</Text>
+                <Text style={[s.itemizedItemValue, { color: b.color }]}>{fmtMoney(b.value)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* Chart Tabs */}
@@ -498,6 +530,23 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 9, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 4 },
   statValue: { fontSize: 20, fontWeight: '900', color: '#f5a623' },
   
+  // Itemized breakdown
+  itemizedCard: {
+    backgroundColor: '#111', borderWidth: 1, borderColor: '#1e1e1e',
+    padding: 14, marginTop: 14,
+  },
+  itemizedTitle: {
+    fontSize: 9, color: '#555', letterSpacing: 2, fontWeight: '700', marginBottom: 12,
+  },
+  itemizedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  itemizedItem: {
+    flexBasis: '47%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 10,
+    backgroundColor: '#0a0a0a', borderWidth: 1, borderColor: '#1e1e1e',
+  },
+  itemizedItemLabel: { fontSize: 9, color: '#555', letterSpacing: 1.5, fontWeight: '700', marginBottom: 2 },
+  itemizedItemValue: { fontSize: 14, fontWeight: '800' },
+  itemizedEmpty: { fontSize: 11, color: '#555', fontStyle: 'italic' },
+
   // Chart tabs
   chartTabs: { marginTop: 24, marginBottom: 16 },
   chartTabsContent: { flexDirection: 'row', gap: 8 },
