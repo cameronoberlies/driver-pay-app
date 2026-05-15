@@ -199,6 +199,25 @@ export default function LogEntryScreen({ userRole }) {
 
   useEffect(() => { load(); }, []);
 
+  // Auto-fill pay from driver hourly_wage × hours. AA/Courier/Airport are
+  // $45 flat. Mirrors web Log Entry + FinalizeTripModal behavior.
+  function calcLogPay(driverId, hours, tripType) {
+    if (['aa', 'courier', 'airport'].includes(tripType)) return '45';
+    const d = drivers.find(x => x.id === driverId);
+    if (d?.hourly_wage && hours) {
+      return (Number(d.hourly_wage) * Number(hours)).toFixed(2);
+    }
+    return '';
+  }
+  useEffect(() => {
+    const newPay = calcLogPay(form.driver_id, form.hours, form.trip_type);
+    if (newPay) setForm(f => ({ ...f, pay: newPay }));
+  }, [form.driver_id, form.hours, form.trip_type]);
+  useEffect(() => {
+    const newPay2 = calcLogPay(form.second_driver_id, form.hours, form.trip_type);
+    if (newPay2) setForm(f => ({ ...f, pay2: newPay2 }));
+  }, [form.second_driver_id, form.hours, form.trip_type]);
+
   const [chaseVehicles, setChaseVehicles] = useState([]);
   useEffect(() => {
     supabase.from('chase_vehicles').select('*').eq('status', 'active').order('stock_number').then(({ data }) => {
