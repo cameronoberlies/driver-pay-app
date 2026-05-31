@@ -57,6 +57,22 @@ try {
   console.log('[Sentry] init skipped:', e.message);
 }
 
+// Microsoft Clarity — session replay + heatmaps for driver UX visibility.
+// Wrapped in try/require so old runtimes (pre-Clarity native build) keep
+// working. Disabled in dev so local Expo Go sessions don't pollute the
+// production project's recordings.
+const CLARITY_PROJECT_ID = "<INSERT_CLARITY_PROJECT_ID>"; // TODO: paste from clarity.microsoft.com → Settings → Setup
+try {
+  if (!__DEV__ && CLARITY_PROJECT_ID && !CLARITY_PROJECT_ID.startsWith('<')) {
+    const Clarity = require("@microsoft/react-native-clarity");
+    Clarity.initialize(CLARITY_PROJECT_ID, {
+      logLevel: Clarity.LogLevel.None,
+    });
+  }
+} catch (e) {
+  console.log('[Clarity] init skipped:', e.message);
+}
+
 installErrorHandlers();
 import * as Updates from "expo-updates";
 import GeofenceActivityScreen from "./screens/GeofenceActivityScreen";
