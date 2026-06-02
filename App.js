@@ -61,7 +61,7 @@ try {
 // Wrapped in try/require so old runtimes (pre-Clarity native build) keep
 // working. Disabled in dev so local Expo Go sessions don't pollute the
 // production project's recordings.
-const CLARITY_PROJECT_ID = "<INSERT_CLARITY_PROJECT_ID>"; // TODO: paste from clarity.microsoft.com → Settings → Setup
+const CLARITY_PROJECT_ID = "x0j3zzfxxy";
 try {
   if (!__DEV__ && CLARITY_PROJECT_ID && !CLARITY_PROJECT_ID.startsWith('<')) {
     const Clarity = require("@microsoft/react-native-clarity");
