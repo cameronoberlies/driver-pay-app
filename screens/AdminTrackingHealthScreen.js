@@ -26,7 +26,7 @@ export default function AdminTrackingHealthScreen() {
   async function load() {
     const [locsRes, profsRes, tripsRes] = await Promise.all([
       supabase.from('driver_locations').select('*'),
-      supabase.from('profiles').select('*').eq('role', 'driver'),
+      supabase.from('profiles').select('*').eq('role', 'driver').order('name'),
       supabase.from('trips').select('*').eq('status', 'in_progress'),
     ]);
 

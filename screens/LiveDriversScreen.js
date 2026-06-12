@@ -20,7 +20,7 @@ export default function LiveDriversScreen() {
   async function load() {
     const [{ data: locs }, { data: profs }, { data: activeStops }, { data: activeTrips }] = await Promise.all([
       supabase.from('driver_locations').select('*'),
-      supabase.from('profiles').select('*').eq('role', 'driver'),
+      supabase.from('profiles').select('*').eq('role', 'driver').order('name'),
       supabase.from('trip_stops').select('*').is('ended_at', null),
       supabase.from('trips').select('driver_id, second_driver_id').eq('status', 'in_progress'),
     ]);

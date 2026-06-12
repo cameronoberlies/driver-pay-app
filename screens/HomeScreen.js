@@ -57,7 +57,7 @@ export default function HomeScreen({ onManageUsers }) {
           .lte('scheduled_pickup', today + 'T23:59:59')
           .order('scheduled_pickup', { ascending: true }),
         supabase.from('driver_locations').select('*'),
-        supabase.from('profiles').select('*'),
+        supabase.from('profiles').select('*').order('name'),
         supabase.from('entries').select('*').like('date', thisMonth + '%'),
         flightAPI.getTodaysFlights(),
       ]);

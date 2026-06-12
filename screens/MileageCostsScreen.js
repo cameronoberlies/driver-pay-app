@@ -101,7 +101,7 @@ export default function MileageCostsScreen() {
         Promise.all([
           supabase.from('entries').select('*').order('date', { ascending: false }),
           supabase.from('trips').select('*'),
-          supabase.from('profiles').select('*'),
+          supabase.from('profiles').select('*').order('name'),
         ]),
         TIMEOUT_MS
       );

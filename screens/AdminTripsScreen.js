@@ -110,7 +110,7 @@ export default function AdminTripsScreen({ session, userRole }) {
     setLoading(true);
     const [tripsRes, profilesRes, availRes] = await Promise.all([
       supabase.from('trips').select('*').order('scheduled_pickup', { ascending: false }),
-      supabase.from('profiles').select('*'),
+      supabase.from('profiles').select('*').order('name'),
       supabase.from('availability').select('*'),
     ]);
 

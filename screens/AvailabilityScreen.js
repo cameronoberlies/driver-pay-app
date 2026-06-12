@@ -423,7 +423,7 @@ export default function AvailabilityScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       const [{ data: p }, { data: a }, { data: profile }] = await withTimeout(
         Promise.all([
-          supabase.from('profiles').select('*').eq('role', 'driver'),
+          supabase.from('profiles').select('*').eq('role', 'driver').order('name'),
           supabase.from('availability').select('*').eq('week_start', weekStart),
           supabase.from('profiles').select('role').eq('id', user.id).single(),
         ]),

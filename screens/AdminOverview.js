@@ -169,7 +169,7 @@ export default function AdminOverview({ userRole }) {
     try {
       const [{ data: p }, { data: e }] = await withTimeout(
         Promise.all([
-          supabase.from('profiles').select('*').eq('role', 'driver'),
+          supabase.from('profiles').select('*').eq('role', 'driver').order('name'),
           supabase.from('entries').select('*'),
         ]),
         TIMEOUT_MS

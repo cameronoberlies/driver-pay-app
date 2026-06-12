@@ -87,7 +87,7 @@ export default function AllEntriesScreen({ userRole }) {
       const [{ data: e }, { data: p }] = await withTimeout(
         Promise.all([
           supabase.from('entries').select('*').order('date', { ascending: false }),
-          supabase.from('profiles').select('*'),
+          supabase.from('profiles').select('*').order('name'),
         ]),
         TIMEOUT_MS
       );

@@ -180,7 +180,7 @@ export default function LogEntryScreen({ userRole }) {
     try {
       const [{ data: profs }, { data: entries }] = await withTimeout(
         Promise.all([
-          supabase.from('profiles').select('*').eq('role', 'driver'),
+          supabase.from('profiles').select('*').eq('role', 'driver').order('name'),
           supabase.from('entries').select('*').or('crm_id.is.null,crm_id.eq.').gt('miles', 0),
         ]),
         TIMEOUT_MS
