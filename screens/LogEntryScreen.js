@@ -503,6 +503,13 @@ export default function LogEntryScreen({ userRole }) {
         </>
       )}
 
+      {form.trip_type && form.trip_type !== 'aa' && form.trip_type !== 'airport' && (
+        <>
+          <Text style={s.label}>VEHICLE STOCK #</Text>
+          <TextInput style={s.input} value={form.stock_numbers} onChangeText={v => set('stock_numbers', v)} placeholder="STK12345" placeholderTextColor={colors.textMuted} />
+        </>
+      )}
+
       {/* ── Itemized Cost Breakdown ── */}
       <View style={{ marginTop: spacing.lg, padding: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border }}>
         <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 2, color: colors.textTertiary, marginBottom: spacing.sm }}>COST BREAKDOWN</Text>

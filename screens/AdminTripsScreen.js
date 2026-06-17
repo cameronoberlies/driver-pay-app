@@ -2141,6 +2141,20 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized, canSeePay 
               </View>
             )}
 
+            {/* ── Vehicle Stock # (drive/fly/courier — single vehicle bought) ── */}
+            {trip.trip_type !== 'aa' && trip.trip_type !== 'airport' && (
+              <View style={s.modalField}>
+                <Text style={s.modalLabel}>Vehicle Stock #</Text>
+                <TextInput
+                  style={s.modalInput}
+                  placeholder="STK12345"
+                  placeholderTextColor={colors.textTertiary}
+                  value={form.stock_numbers ?? trip.stock_numbers ?? ''}
+                  onChangeText={(text) => set('stock_numbers', text)}
+                />
+              </View>
+            )}
+
             <TouchableOpacity
               style={s.checkboxRow}
               onPress={() => set('recon_missed', !form.recon_missed)}
