@@ -1812,7 +1812,42 @@ function ReassignTripModal({ trip, allProfiles, onClose, onSaved, allTrips, avai
 }
 
 // ── FINALIZE TRIP MODAL ────────────────────────────────────────────────────────────────────────────
-function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized, canSeePay = true }) {
+function FinalizeTripModal({ trip: tripProp, allProfiles, onClose, onFinalized, canSeePay = true }) {
+  // Shadow the prop in local state so Grace can fix wrong trip info (date,
+  // crm_id, type, drivers) inline before finalizing without bouncing modals.
+  const [trip, setTrip] = useState(tripProp);
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [infoForm, setInfoForm] = useState({
+    crm_id: trip.crm_id || '',
+    city: trip.city || '',
+    trip_type: trip.trip_type || 'drive',
+    driver_id: trip.driver_id || '',
+    second_driver_id: trip.second_driver_id || '',
+    scheduled_pickup: trip.scheduled_pickup || '',
+  });
+  const [savingInfo, setSavingInfo] = useState(false);
+  const allDrivers = allProfiles.filter((p) => p.role === 'driver');
+
+  async function handleSaveInfo() {
+    if (!infoForm.driver_id) return;
+    setSavingInfo(true);
+    const updates = {
+      crm_id: infoForm.crm_id,
+      city: infoForm.city,
+      trip_type: infoForm.trip_type,
+      driver_id: infoForm.driver_id,
+      designated_driver_id: infoForm.driver_id,
+      second_driver_id: infoForm.trip_type === 'drive' ? (infoForm.second_driver_id || null) : null,
+      scheduled_pickup: infoForm.scheduled_pickup || trip.scheduled_pickup,
+    };
+    const { data, error: err } = await supabase
+      .from('trips').update(updates).eq('id', trip.id).select().single();
+    setSavingInfo(false);
+    if (err || !data) return;
+    setTrip(data);
+    setEditingInfo(false);
+  }
+
   const driver1 = allProfiles.find((p) => p.id === trip.driver_id);
   const driver2 = trip.second_driver_id
     ? allProfiles.find((p) => p.id === trip.second_driver_id)
@@ -1988,11 +2023,155 @@ function FinalizeTripModal({ trip, allProfiles, onClose, onFinalized, canSeePay 
       <View style={s.modalOverlay}>
         <View style={s.modalContainer}>
           <Text style={s.modalTitle}>Finalize Trip</Text>
-          <Text style={s.modalSubtitle}>
-            {trip.city} · {trip.crm_id}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={[s.modalSubtitle, { marginBottom: 0, flex: 1 }]}>
+              {trip.city || '(no city)'} · {trip.crm_id || '(no CRM ID)'}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setEditingInfo((v) => !v)}
+              style={{
+                paddingHorizontal: 10, paddingVertical: 5,
+                borderWidth: 1,
+                borderColor: editingInfo ? colors.error : colors.border,
+                borderRadius: 4,
+              }}
+            >
+              <Text style={{
+                fontSize: 10, fontWeight: '700', letterSpacing: 1,
+                color: editingInfo ? colors.error : colors.textTertiary,
+              }}>{editingInfo ? 'CANCEL' : '✏ EDIT INFO'}</Text>
+            </TouchableOpacity>
+          </View>
 
           <ScrollView style={{ maxHeight: 400 }} keyboardShouldPersistTaps="handled">
+
+            {editingInfo && (
+              <View style={{
+                marginBottom: 16, padding: 12,
+                backgroundColor: colors.surface,
+                borderWidth: 1, borderColor: colors.border, borderRadius: 6,
+              }}>
+                <Text style={s.modalLabel}>Carpage ID</Text>
+                <TextInput
+                  style={s.modalInput}
+                  value={infoForm.crm_id}
+                  onChangeText={(v) => setInfoForm((f) => ({ ...f, crm_id: v.toUpperCase() }))}
+                  placeholder="GP123"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="characters"
+                />
+
+                <Text style={s.modalLabel}>City</Text>
+                <TextInput
+                  style={s.modalInput}
+                  value={infoForm.city}
+                  onChangeText={(v) => setInfoForm((f) => ({ ...f, city: v }))}
+                  placeholder="Charlotte"
+                  placeholderTextColor={colors.textTertiary}
+                />
+
+                <Text style={s.modalLabel}>Trip Type</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {[
+                    { key: 'fly', label: '✈ Fly' },
+                    { key: 'drive', label: '🚗 Drive' },
+                    { key: 'courier', label: '📦 Courier' },
+                    { key: 'airport', label: '🛫 Airport' },
+                  ].map((t) => (
+                    <TouchableOpacity
+                      key={t.key}
+                      onPress={() => setInfoForm((f) => ({ ...f, trip_type: t.key }))}
+                      style={{
+                        paddingHorizontal: 12, paddingVertical: 8, marginRight: 6,
+                        borderWidth: 1, borderRadius: 4,
+                        borderColor: infoForm.trip_type === t.key ? colors.primary : colors.border,
+                        backgroundColor: infoForm.trip_type === t.key ? colors.primaryFaint || 'rgba(245,166,35,0.1)' : 'transparent',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 12, fontWeight: '700',
+                        color: infoForm.trip_type === t.key ? colors.primary : colors.textTertiary,
+                      }}>{t.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <Text style={s.modalLabel}>Driver</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {allDrivers.map((d) => (
+                    <TouchableOpacity
+                      key={d.id}
+                      onPress={() => setInfoForm((f) => ({ ...f, driver_id: d.id }))}
+                      style={{
+                        paddingHorizontal: 12, paddingVertical: 8, marginRight: 6,
+                        borderWidth: 1, borderRadius: 4,
+                        borderColor: infoForm.driver_id === d.id ? colors.primary : colors.border,
+                        backgroundColor: infoForm.driver_id === d.id ? colors.primaryFaint || 'rgba(245,166,35,0.1)' : 'transparent',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 12, fontWeight: '700',
+                        color: infoForm.driver_id === d.id ? colors.primary : colors.textTertiary,
+                      }}>{d.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {infoForm.trip_type === 'drive' && (
+                  <>
+                    <Text style={s.modalLabel}>Second Driver</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => setInfoForm((f) => ({ ...f, second_driver_id: '' }))}
+                        style={{
+                          paddingHorizontal: 12, paddingVertical: 8, marginRight: 6,
+                          borderWidth: 1, borderRadius: 4,
+                          borderColor: !infoForm.second_driver_id ? colors.primary : colors.border,
+                          backgroundColor: !infoForm.second_driver_id ? colors.primaryFaint || 'rgba(245,166,35,0.1)' : 'transparent',
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 12, fontWeight: '700',
+                          color: !infoForm.second_driver_id ? colors.primary : colors.textTertiary,
+                        }}>— None —</Text>
+                      </TouchableOpacity>
+                      {allDrivers.filter((d) => d.id !== infoForm.driver_id).map((d) => (
+                        <TouchableOpacity
+                          key={d.id}
+                          onPress={() => setInfoForm((f) => ({ ...f, second_driver_id: d.id }))}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 8, marginRight: 6,
+                            borderWidth: 1, borderRadius: 4,
+                            borderColor: infoForm.second_driver_id === d.id ? colors.primary : colors.border,
+                            backgroundColor: infoForm.second_driver_id === d.id ? colors.primaryFaint || 'rgba(245,166,35,0.1)' : 'transparent',
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 12, fontWeight: '700',
+                            color: infoForm.second_driver_id === d.id ? colors.primary : colors.textTertiary,
+                          }}>{d.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
+
+                <TouchableOpacity
+                  onPress={handleSaveInfo}
+                  disabled={savingInfo || !infoForm.driver_id}
+                  style={{
+                    paddingVertical: 10,
+                    backgroundColor: !infoForm.driver_id ? colors.border : colors.primary,
+                    borderRadius: 4, alignItems: 'center', marginTop: 4,
+                  }}
+                >
+                  <Text style={{ color: colors.background, fontSize: 12, fontWeight: '700', letterSpacing: 1 }}>
+                    {savingInfo ? 'SAVING...' : 'SAVE TRIP INFO'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
 
             {canSeePay && (
               <View style={s.modalField}>
