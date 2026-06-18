@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, RefreshControl, ActivityIndicator, Modal, ScrollView,
-  Platform, Alert,
+  Platform, Alert, Switch,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 let FileSystem = null;
@@ -70,6 +70,7 @@ export default function AllEntriesScreen({ userRole }) {
   const [search, setSearch] = useState('');
   const [filterDriver, setFilterDriver] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
 
   // Date range state
   const [quickRange, setQuickRange] = useState('all');
@@ -359,8 +360,10 @@ export default function AllEntriesScreen({ userRole }) {
         columnWrapperStyle={isTablet ? { gap: 10 } : undefined}
         renderItem={({ item: e }) => {
           const driver = profiles.find(p => p.id === e.driver_id);
+          const Wrapper = canSeePay ? TouchableOpacity : View;
+          const wrapperProps = canSeePay ? { onPress: () => setEditingEntry(e), activeOpacity: 0.7 } : {};
           return (
-            <View style={[s.card, isTablet && { width: '48.5%' }]}>
+            <Wrapper style={[s.card, isTablet && { width: '48.5%' }]} {...wrapperProps}>
               <View style={s.cardTop}>
                 <Text style={s.driverName}>
                   {driver?.name ?? '—'}
@@ -382,8 +385,13 @@ export default function AllEntriesScreen({ userRole }) {
                     {e.recon_missed ? 'MISSED' : 'OK'}
                   </Text>
                 </View>
+                {e.turned_down && (
+                  <View style={[s.badge, { borderColor: colors.primary }]}>
+                    <Text style={[s.badgeText, { color: colors.primary }]}>TURNED DOWN</Text>
+                  </View>
+                )}
               </View>
-            </View>
+            </Wrapper>
           );
         }}
       />
@@ -523,9 +531,193 @@ export default function AllEntriesScreen({ userRole }) {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {editingEntry && (
+        <EditEntryModal
+          entry={editingEntry}
+          onSave={(updated) => {
+            setEntries((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+            setEditingEntry(null);
+          }}
+          onClose={() => setEditingEntry(null)}
+        />
+      )}
     </View>
   );
 }
+
+function EditEntryModal({ entry, onSave, onClose }) {
+  const [form, setForm] = useState({
+    pay: entry.pay != null ? String(entry.pay) : '',
+    hours: entry.hours != null ? String(entry.hours) : '',
+    miles: entry.miles != null ? String(entry.miles) : '',
+    estimated_cost: entry.estimated_cost != null ? String(entry.estimated_cost) : '',
+    flight_cost: entry.flight_cost != null ? String(entry.flight_cost) : '',
+    rideshare_cost: entry.rideshare_cost != null ? String(entry.rideshare_cost) : '',
+    fuel_cost: entry.fuel_cost != null ? String(entry.fuel_cost) : '',
+    other_cost: entry.other_cost != null ? String(entry.other_cost) : '',
+    crm_id: entry.crm_id ?? '',
+    city: entry.city ?? '',
+    recon_missed: !!entry.recon_missed,
+    turned_down: !!entry.turned_down,
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(k, v) { setForm((f) => ({ ...f, [k]: v })); }
+
+  // Same formula as Log Entry — pay + itemized = actual cost
+  const computedActualCost = [
+    form.flight_cost, form.rideshare_cost, form.fuel_cost, form.other_cost, form.pay,
+  ].reduce((sum, v) => sum + (Number(v) || 0), 0);
+
+  async function handleSave() {
+    setSaving(true);
+    const costFields = {
+      flight_cost: form.flight_cost ? Number(form.flight_cost) : null,
+      rideshare_cost: form.rideshare_cost ? Number(form.rideshare_cost) : null,
+      fuel_cost: form.fuel_cost ? Number(form.fuel_cost) : null,
+      other_cost: form.other_cost ? Number(form.other_cost) : null,
+    };
+    const updates = {
+      pay: form.pay ? Number(form.pay) : 0,
+      hours: form.hours ? Number(form.hours) : null,
+      miles: form.miles ? Number(form.miles) : 0,
+      actual_cost: computedActualCost,
+      estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : 0,
+      crm_id: form.crm_id.trim(),
+      city: form.city.trim(),
+      recon_missed: form.recon_missed,
+      turned_down: form.turned_down,
+      ...costFields,
+    };
+    const { data, error: err } = await supabase
+      .from('entries').update(updates).eq('id', entry.id).select().single();
+    setSaving(false);
+    if (err) { Alert.alert('Save failed', err.message); return; }
+    onSave(data);
+  }
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} style={s.modalOverlay} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={s.modalSheet} onPress={(e) => e.stopPropagation && e.stopPropagation()}>
+          <View style={s.modalHandle} />
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>EDIT ENTRY</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Text style={s.modalClear}>CANCEL</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <Text style={s.sectionLabel}>PAY ($)</Text>
+            <TextInput style={editStyles.input} value={form.pay} onChangeText={(v) => set('pay', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+
+            <View style={editStyles.row}>
+              <View style={editStyles.half}>
+                <Text style={s.sectionLabel}>HOURS</Text>
+                <TextInput style={editStyles.input} value={form.hours} onChangeText={(v) => set('hours', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+              </View>
+              <View style={editStyles.half}>
+                <Text style={s.sectionLabel}>MILES</Text>
+                <TextInput style={editStyles.input} value={form.miles} onChangeText={(v) => set('miles', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+              </View>
+            </View>
+
+            <Text style={s.sectionLabel}>CARPAGE ID</Text>
+            <TextInput style={editStyles.input} value={form.crm_id} onChangeText={(v) => set('crm_id', v.toUpperCase())} placeholder="CP-XXXX" placeholderTextColor={colors.textMuted} autoCapitalize="characters" />
+
+            <Text style={s.sectionLabel}>CITY</Text>
+            <TextInput style={editStyles.input} value={form.city} onChangeText={(v) => set('city', v)} placeholder="Charlotte" placeholderTextColor={colors.textMuted} />
+
+            <Text style={s.sectionLabel}>ESTIMATED COST ($)</Text>
+            <TextInput style={editStyles.input} value={form.estimated_cost} onChangeText={(v) => set('estimated_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+
+            <View style={editStyles.breakdownCard}>
+              <Text style={editStyles.breakdownTitle}>COST BREAKDOWN</Text>
+              <View style={editStyles.row}>
+                <View style={editStyles.half}>
+                  <Text style={editStyles.label}>FLIGHT ($)</Text>
+                  <TextInput style={editStyles.input} value={form.flight_cost} onChangeText={(v) => set('flight_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+                </View>
+                <View style={editStyles.half}>
+                  <Text style={editStyles.label}>RIDESHARE ($)</Text>
+                  <TextInput style={editStyles.input} value={form.rideshare_cost} onChangeText={(v) => set('rideshare_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+                </View>
+              </View>
+              <View style={editStyles.row}>
+                <View style={editStyles.half}>
+                  <Text style={editStyles.label}>FUEL ($)</Text>
+                  <TextInput style={editStyles.input} value={form.fuel_cost} onChangeText={(v) => set('fuel_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+                </View>
+                <View style={editStyles.half}>
+                  <Text style={editStyles.label}>OTHER ($)</Text>
+                  <TextInput style={editStyles.input} value={form.other_cost} onChangeText={(v) => set('other_cost', v)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.textMuted} />
+                </View>
+              </View>
+              <View style={editStyles.totalRow}>
+                <Text style={editStyles.totalLabel}>Total Actual Cost</Text>
+                <Text style={editStyles.totalValue}>${computedActualCost.toFixed(2)}</Text>
+              </View>
+            </View>
+
+            <View style={editStyles.switchRow}>
+              <Text style={[editStyles.switchLabel, form.recon_missed && { color: colors.error }]}>RECON MISSED</Text>
+              <Switch
+                value={form.recon_missed}
+                onValueChange={(v) => set('recon_missed', v)}
+                trackColor={{ false: colors.surfaceBorder, true: colors.errorDim }}
+                thumbColor={form.recon_missed ? colors.error : colors.textMuted}
+              />
+            </View>
+
+            <View style={editStyles.switchRow}>
+              <Text style={[editStyles.switchLabel, form.turned_down && { color: colors.primary }]}>VEHICLE TURNED DOWN</Text>
+              <Switch
+                value={form.turned_down}
+                onValueChange={(v) => set('turned_down', v)}
+                trackColor={{ false: colors.surfaceBorder, true: 'rgba(245,166,35,0.4)' }}
+                thumbColor={form.turned_down ? colors.primary : colors.textMuted}
+              />
+            </View>
+
+            <TouchableOpacity style={[s.applyBtn, saving && { opacity: 0.5 }]} onPress={handleSave} disabled={saving}>
+              {saving ? <ActivityIndicator color={colors.textPrimary} /> : <Text style={s.applyBtnText}>SAVE CHANGES →</Text>}
+            </TouchableOpacity>
+          </ScrollView>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const editStyles = StyleSheet.create({
+  input: {
+    backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    color: colors.textPrimary, fontSize: 14, marginBottom: spacing.md,
+  },
+  row: { flexDirection: 'row', gap: spacing.sm },
+  half: { flex: 1 },
+  label: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 1.5, marginBottom: spacing.xs },
+  breakdownCard: {
+    marginTop: spacing.md, marginBottom: spacing.md, padding: spacing.lg,
+    backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
+  },
+  breakdownTitle: { ...typography.labelSm, color: colors.textTertiary, letterSpacing: 2, marginBottom: spacing.md },
+  totalRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    paddingTop: spacing.md, marginTop: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  totalLabel: { fontSize: 13, fontWeight: '700', color: colors.textTertiary },
+  totalValue: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  switchRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: spacing.md, marginBottom: spacing.xs,
+  },
+  switchLabel: { ...typography.label, color: colors.textTertiary, letterSpacing: 1.5 },
+});
 
 const s = StyleSheet.create({
   container: { ...components.screen },
