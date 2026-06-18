@@ -171,6 +171,7 @@ export default function LogEntryScreen({ userRole }) {
     dealer_plate: '',
     chase_vehicle_stock: '',
     recon_missed: false,
+    turned_down: false,
   });
 
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
@@ -269,6 +270,7 @@ export default function LogEntryScreen({ userRole }) {
       trip_type: form.trip_type || null,
       stock_numbers: form.stock_numbers || null,
       recon_missed: form.recon_missed,
+      turned_down: form.turned_down,
       ...costFields,
     };
     const { error } = await supabase.from('entries').insert({
@@ -295,7 +297,7 @@ export default function LogEntryScreen({ userRole }) {
     setForm(f => ({
       ...f, pay: '', pay2: '', second_driver_id: '', hours: '', miles: '', estimated_cost: '',
       flight_cost: '', rideshare_cost: '', fuel_cost: '', other_cost: '',
-      city: '', crm_id: '', trip_type: '', stock_numbers: '', dealer_plate: '', chase_vehicle_stock: '', recon_missed: false,
+      city: '', crm_id: '', trip_type: '', stock_numbers: '', dealer_plate: '', chase_vehicle_stock: '', recon_missed: false, turned_down: false,
     }));
     setTimeout(() => setSaved(false), 3000);
   }
@@ -551,6 +553,16 @@ export default function LogEntryScreen({ userRole }) {
           onValueChange={v => set('recon_missed', v)}
           trackColor={{ false: colors.surfaceBorder, true: colors.errorDim }}
           thumbColor={form.recon_missed ? colors.error : colors.textMuted}
+        />
+      </View>
+
+      <View style={s.switchRow}>
+        <Text style={[s.switchLabel, form.turned_down && { color: colors.primary }]}>VEHICLE TURNED DOWN</Text>
+        <Switch
+          value={form.turned_down}
+          onValueChange={v => set('turned_down', v)}
+          trackColor={{ false: colors.surfaceBorder, true: 'rgba(245,166,35,0.4)' }}
+          thumbColor={form.turned_down ? colors.primary : colors.textMuted}
         />
       </View>
 
