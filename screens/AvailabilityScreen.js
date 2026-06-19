@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Modal, TouchableOpacity,
   RefreshControl, ActivityIndicator, TextInput, KeyboardAvoidingView,
-  Platform, Alert,
+  Platform, Alert, Switch,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, radius, typography } from '../lib/theme';
@@ -414,8 +414,14 @@ export default function AvailabilityScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [capacityModalVisible, setCapacityModalVisible] = useState(false);
+  const [editingDriver, setEditingDriver] = useState(null);
 
   const weekStart = getNextWeekStart().toISOString().slice(0, 10);
+
+  async function reloadRecords() {
+    const { data } = await supabase.from('availability').select('*').eq('week_start', weekStart);
+    setRecords(data ?? []);
+  }
 
   async function load() {
     setError(false);
@@ -497,13 +503,16 @@ export default function AvailabilityScreen() {
           {profiles.map(driver => {
             const rec = records.find(r => r.driver_id === driver.id);
             const hasSubmitted = submitted.has(driver.id);
+            const Wrapper = isAdmin ? TouchableOpacity : View;
+            const wrapperProps = isAdmin ? { onPress: () => setEditingDriver(driver), activeOpacity: 0.7 } : {};
 
             return (
-              <View key={driver.id} style={[s.card, isTablet && { width: '48.5%' }, !hasSubmitted && s.cardNotSubmitted]}>
+              <Wrapper key={driver.id} style={[s.card, isTablet && { width: '48.5%' }, !hasSubmitted && s.cardNotSubmitted]} {...wrapperProps}>
                 <View style={s.cardHeader}>
                   <Text style={s.driverName}>
                     {driver.name}
                     {driver.willing_to_fly && <Text style={s.flyBadge}> (F)</Text>}
+                    {isAdmin && <Text style={{ color: colors.textTertiary, fontSize: 11, marginLeft: 6 }}>  ✏</Text>}
                   </Text>
                   {!hasSubmitted && <Text style={s.notSubmitted}>NOT SUBMITTED</Text>}
                   {rec?.updated_after_saturday && <Text style={s.amended}>⚠ amended</Text>}
@@ -532,7 +541,7 @@ export default function AvailabilityScreen() {
                     );
                   })}
                 </View>
-              </View>
+              </Wrapper>
             );
           })}
         </View>
@@ -550,9 +559,189 @@ export default function AvailabilityScreen() {
         onClose={() => setCapacityModalVisible(false)}
         isAdmin={userRole === 'admin'}
       />
+
+      {editingDriver && (
+        <AdminAvailabilityEditModal
+          driver={editingDriver}
+          weekStart={weekStart}
+          existingRecord={records.find(r => r.driver_id === editingDriver.id) || null}
+          onSaved={async () => {
+            await reloadRecords();
+            setEditingDriver(null);
+          }}
+          onClose={() => setEditingDriver(null)}
+        />
+      )}
     </>
   );
 }
+
+function AdminAvailabilityEditModal({ driver, weekStart, existingRecord, onSaved, onClose }) {
+  const emptyAvail = {
+    sun: false, mon: false, tue: false, wed: false, thu: false, fri: false, sat: false,
+    sun_done_by: '', mon_done_by: '', tue_done_by: '', wed_done_by: '',
+    thu_done_by: '', fri_done_by: '', sat_done_by: '',
+  };
+  const [avail, setAvail] = useState(() => {
+    if (!existingRecord) return emptyAvail;
+    return {
+      sun: !!existingRecord.sun, mon: !!existingRecord.mon, tue: !!existingRecord.tue,
+      wed: !!existingRecord.wed, thu: !!existingRecord.thu, fri: !!existingRecord.fri,
+      sat: !!existingRecord.sat,
+      sun_done_by: existingRecord.sun_done_by ?? '',
+      mon_done_by: existingRecord.mon_done_by ?? '',
+      tue_done_by: existingRecord.tue_done_by ?? '',
+      wed_done_by: existingRecord.wed_done_by ?? '',
+      thu_done_by: existingRecord.thu_done_by ?? '',
+      fri_done_by: existingRecord.fri_done_by ?? '',
+      sat_done_by: existingRecord.sat_done_by ?? '',
+    };
+  });
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function toggleDay(d) {
+    setAvail((a) => ({
+      ...a,
+      [d]: !a[d],
+      ...(a[d] ? { [`${d}_done_by`]: '' } : {}),
+    }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    const payload = {
+      driver_id: driver.id,
+      week_start: weekStart,
+      ...avail,
+      updated_after_saturday: true,
+      update_reason: reason.trim() || 'Admin edit',
+    };
+    DAY_KEYS.forEach((d) => { if (!avail[d]) payload[`${d}_done_by`] = null; });
+    const { error: err } = await supabase
+      .from('availability').upsert(payload, { onConflict: 'driver_id,week_start' });
+    setSaving(false);
+    if (err) { Alert.alert('Save failed', err.message); return; }
+    onSaved();
+  }
+
+  const FULL_DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, justifyContent: 'flex-end' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <TouchableOpacity activeOpacity={1} style={editModalStyles.overlay} onPress={onClose}>
+          <TouchableOpacity activeOpacity={1} style={editModalStyles.sheet} onPress={() => {}}>
+            <View style={editModalStyles.handle} />
+            <View style={editModalStyles.header}>
+              <Text style={editModalStyles.title}>EDIT — {driver.name.toUpperCase()}</Text>
+              <TouchableOpacity onPress={onClose}>
+                <Text style={editModalStyles.cancel}>CANCEL</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {DAY_KEYS.map((key, i) => (
+                <View key={key} style={[editModalStyles.dayRow, avail[key] && editModalStyles.dayRowOn]}>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                    <Switch
+                      value={avail[key]}
+                      onValueChange={() => toggleDay(key)}
+                      trackColor={{ false: colors.surfaceBorder, true: 'rgba(74,232,133,0.4)' }}
+                      thumbColor={avail[key] ? colors.success : colors.textMuted}
+                    />
+                    <Text style={[editModalStyles.dayLabel, avail[key] && { color: colors.success }]}>
+                      {FULL_DAY_LABELS[i]}
+                    </Text>
+                  </View>
+                  {avail[key] && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={editModalStyles.doneLabel}>by</Text>
+                      <TextInput
+                        style={editModalStyles.timeInput}
+                        value={avail[`${key}_done_by`]}
+                        onChangeText={(v) => setAvail((a) => ({ ...a, [`${key}_done_by`]: v }))}
+                        placeholder="14:00"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numbers-and-punctuation"
+                        maxLength={5}
+                      />
+                    </View>
+                  )}
+                </View>
+              ))}
+
+              <Text style={editModalStyles.reasonLabel}>REASON (defaults to "Admin edit")</Text>
+              <TextInput
+                style={editModalStyles.reasonInput}
+                value={reason}
+                onChangeText={setReason}
+                placeholder="Driver called out, requested change, etc."
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <TouchableOpacity
+                style={[editModalStyles.saveBtn, saving && { opacity: 0.5 }]}
+                onPress={handleSave}
+                disabled={saving}
+              >
+                {saving ? <ActivityIndicator color={colors.textPrimary} /> : <Text style={editModalStyles.saveText}>SAVE AVAILABILITY →</Text>}
+              </TouchableOpacity>
+            </ScrollView>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const editModalStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
+    padding: spacing.xl, maxHeight: '85%',
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border,
+    alignSelf: 'center', marginBottom: spacing.lg,
+  },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  title: { ...typography.h3, fontWeight: '900', color: colors.textPrimary, letterSpacing: 2 },
+  cancel: { ...typography.captionSm, color: colors.error, fontWeight: '700', letterSpacing: 1 },
+  dayRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: spacing.md, paddingHorizontal: spacing.md, marginBottom: spacing.sm,
+    backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
+  },
+  dayRowOn: { borderColor: colors.success },
+  dayLabel: { ...typography.body, fontWeight: '700', color: colors.textTertiary, marginLeft: spacing.md },
+  doneLabel: { ...typography.captionSm, color: colors.textTertiary, letterSpacing: 1 },
+  timeInput: {
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    color: colors.textPrimary, fontSize: 14, width: 80, textAlign: 'center',
+  },
+  reasonLabel: {
+    ...typography.labelSm, color: colors.textTertiary,
+    letterSpacing: 2, marginTop: spacing.xl, marginBottom: spacing.sm,
+  },
+  reasonInput: {
+    backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    color: colors.textPrimary, fontSize: 14, marginBottom: spacing.xl,
+  },
+  saveBtn: {
+    backgroundColor: colors.primary, paddingVertical: spacing.lg,
+    borderRadius: radius.sm, alignItems: 'center', marginBottom: spacing.xl,
+  },
+  saveText: { color: colors.bg, fontSize: 13, fontWeight: '800', letterSpacing: 1.5 },
+});
 
 // Note: CapacityModal receives isAdmin for display purposes.
 // The actual write protection is enforced at the DB level via RLS.
