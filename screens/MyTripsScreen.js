@@ -44,6 +44,7 @@ import { colors, spacing, radius, typography, components } from '../lib/theme';
 import useResponsive from '../lib/useResponsive';
 import OBDStatusCard from '../components/OBDStatusCard';
 import { obdBLE, obdData, mockOBD } from '../lib/obd2';
+import { writeDriverLocation, logPathFired, LOCATION_SOURCES } from '../lib/locationWrite';
 
 const LOCATION_TASK = 'background-location-task';
 const SIGNIFICANT_CHANGE_TASK = 'significant-location-change-task';
@@ -56,6 +57,22 @@ TaskManager.defineTask(SIGNIFICANT_CHANGE_TASK, async ({ data, error }) => {
   if (error) return;
   const AsyncStorage = require('@react-native-async-storage/async-storage').default;
   const Location = require('expo-location');
+
+  // Phase 1 audit instrumentation: log every SLC fire. The audit said we
+  // couldn't tell whether iOS was delivering SLC events at all. This event
+  // answers that. Uses a temp anon client because the BG context has no
+  // user session in scope.
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const tmpClient = createClient(
+      'https://yincjogkjvotupzgetqg.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las'
+    );
+    await logPathFired(LOCATION_SOURCES.SLC, {
+      had_locations: !!(data?.locations?.length),
+      location_count: data?.locations?.length || 0,
+    }, tmpClient);
+  } catch (e) { console.log('[SLC] logPathFired failed:', e?.message); }
 
   try {
     const stored = await AsyncStorage.getItem('activeTrip');
@@ -101,6 +118,24 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
 
   const AsyncStorage = require('@react-native-async-storage/async-storage').default;
   const { createClient } = require('@supabase/supabase-js');
+
+  // Phase 1 audit instrumentation: log every BG task fire BEFORE we try
+  // anything else. This way "iOS never woke us" (no fired events) is
+  // distinguishable from "iOS woke us but the write failed". Use a temp
+  // anon-only client so the log doesn't itself require user auth.
+  let firedLogClient = null;
+  try {
+    firedLogClient = createClient(
+      'https://yincjogkjvotupzgetqg.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las'
+    );
+    await logPathFired(LOCATION_SOURCES.BG_TASK, {
+      location_count: locations.length,
+      fix_timestamp: locations[locations.length - 1]?.timestamp || null,
+    }, firedLogClient);
+  } catch (e) {
+    console.log('[BG Task] logPathFired failed:', e?.message);
+  }
 
   try {
     const stored = await AsyncStorage.getItem('activeTrip');
@@ -229,12 +264,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
 
     // Read OBD snapshot persisted by OBDDataManager — fresh values when
     // the app is backgrounded (BG task can't access the BLE singleton directly)
-    const bgLocUpdate = {
-      driver_id: userId,
-      latitude,
-      longitude,
-      updated_at: new Date().toISOString(),
-    };
+    const obdExtra = {};
     try {
       const obdRaw = await AsyncStorage.getItem('obdSnapshot');
       if (obdRaw) {
@@ -242,22 +272,27 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
         // Only use if updated within last 30s — stale data isn't useful
         if (obd?.timestamp && Date.now() - obd.timestamp < 30000) {
           let wroteOBD = false;
-          if (obd.speed != null) { bgLocUpdate.obd_speed = obd.speed; wroteOBD = true; }
-          if (obd.rpm != null) { bgLocUpdate.obd_rpm = obd.rpm; wroteOBD = true; }
-          if (obd.fuelLevel != null) { bgLocUpdate.obd_fuel = obd.fuelLevel; wroteOBD = true; }
-          if (wroteOBD) bgLocUpdate.obd_updated_at = new Date().toISOString();
+          if (obd.speed != null) { obdExtra.obd_speed = obd.speed; wroteOBD = true; }
+          if (obd.rpm != null) { obdExtra.obd_rpm = obd.rpm; wroteOBD = true; }
+          if (obd.fuelLevel != null) { obdExtra.obd_fuel = obd.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) obdExtra.obd_updated_at = new Date().toISOString();
         }
       }
     } catch {}
 
-    // Write to database
-    const { error: dbError } = await client.from('driver_locations').upsert(bgLocUpdate, { onConflict: 'driver_id' });
-
-    if (dbError) {
-      console.log('[BG Task] DB write error:', dbError.message);
-    } else {
-      console.log('[BG Task] Location updated successfully');
-    }
+    // Phase 1 audit instrumentation: route through writeDriverLocation so
+    // the row carries source/fix_age_ms/app_state and any rejection is
+    // logged (was previously a silent console.log only).
+    await writeDriverLocation({
+      client,
+      driverId: userId,
+      latitude,
+      longitude,
+      source: LOCATION_SOURCES.BG_TASK,
+      fixTimestamp: loc.timestamp || null,
+      appState: 'background',
+      extra: obdExtra,
+    });
 
     // Update AsyncStorage
     await AsyncStorage.setItem('activeTrip', JSON.stringify({
@@ -992,21 +1027,25 @@ export default function MyTripsScreen({ session, navigation }) {
       { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 10000, distanceInterval: 0 },
       async (loc) => {
         const { latitude, longitude } = loc.coords;
-        const locUpdate = {
-          driver_id: session.user.id,
-          latitude,
-          longitude,
-          updated_at: new Date().toISOString(),
-        };
+        const fgExtra = {};
         if (obdBLE.isConnected()) {
           const snap = obdData.getSnapshot();
           let wroteOBD = false;
-          if (snap.speed != null) { locUpdate.obd_speed = snap.speed; wroteOBD = true; }
-          if (snap.rpm != null) { locUpdate.obd_rpm = snap.rpm; wroteOBD = true; }
-          if (snap.fuelLevel != null) { locUpdate.obd_fuel = snap.fuelLevel; wroteOBD = true; }
-          if (wroteOBD) locUpdate.obd_updated_at = new Date().toISOString();
+          if (snap.speed != null) { fgExtra.obd_speed = snap.speed; wroteOBD = true; }
+          if (snap.rpm != null) { fgExtra.obd_rpm = snap.rpm; wroteOBD = true; }
+          if (snap.fuelLevel != null) { fgExtra.obd_fuel = snap.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) fgExtra.obd_updated_at = new Date().toISOString();
         }
-        await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
+        await writeDriverLocation({
+          client: supabase,
+          driverId: session.user.id,
+          latitude,
+          longitude,
+          source: LOCATION_SOURCES.FG_WATCH,
+          fixTimestamp: loc.timestamp || null,
+          appState: AppState.currentState,
+          extra: fgExtra,
+        });
 
         try {
           const stored = await AsyncStorage.getItem('activeTrip');
@@ -1146,22 +1185,25 @@ export default function MyTripsScreen({ session, navigation }) {
         const { latitude, longitude, speed: rawSpeed } = loc.coords;
 
         // Push live location + OBD data to DB for admin Live Drivers view
-        const locUpdate = {
-          driver_id: session.user.id,
-          latitude,
-          longitude,
-          updated_at: new Date().toISOString(),
-        };
-        // Include live OBD readings if connected
+        const fgExtra = {};
         if (obdBLE.isConnected()) {
           const snap = obdData.getSnapshot();
           let wroteOBD = false;
-          if (snap.speed != null) { locUpdate.obd_speed = snap.speed; wroteOBD = true; }
-          if (snap.rpm != null) { locUpdate.obd_rpm = snap.rpm; wroteOBD = true; }
-          if (snap.fuelLevel != null) { locUpdate.obd_fuel = snap.fuelLevel; wroteOBD = true; }
-          if (wroteOBD) locUpdate.obd_updated_at = new Date().toISOString();
+          if (snap.speed != null) { fgExtra.obd_speed = snap.speed; wroteOBD = true; }
+          if (snap.rpm != null) { fgExtra.obd_rpm = snap.rpm; wroteOBD = true; }
+          if (snap.fuelLevel != null) { fgExtra.obd_fuel = snap.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) fgExtra.obd_updated_at = new Date().toISOString();
         }
-        await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
+        await writeDriverLocation({
+          client: supabase,
+          driverId: session.user.id,
+          latitude,
+          longitude,
+          source: LOCATION_SOURCES.FG_WATCH,
+          fixTimestamp: loc.timestamp || null,
+          appState: AppState.currentState,
+          extra: fgExtra,
+        });
 
         // Accumulate miles and speed data in AsyncStorage
         try {
@@ -1336,21 +1378,25 @@ export default function MyTripsScreen({ session, navigation }) {
         const { latitude, longitude, speed: rawSpeed } = loc.coords;
 
         // Push live location for admin Live Drivers view
-        const locUpdate = {
-          driver_id: session.user.id,
-          latitude,
-          longitude,
-          updated_at: new Date().toISOString(),
-        };
+        const fgExtra = {};
         if (obdBLE.isConnected()) {
           const snap = obdData.getSnapshot();
           let wroteOBD = false;
-          if (snap.speed != null) { locUpdate.obd_speed = snap.speed; wroteOBD = true; }
-          if (snap.rpm != null) { locUpdate.obd_rpm = snap.rpm; wroteOBD = true; }
-          if (snap.fuelLevel != null) { locUpdate.obd_fuel = snap.fuelLevel; wroteOBD = true; }
-          if (wroteOBD) locUpdate.obd_updated_at = new Date().toISOString();
+          if (snap.speed != null) { fgExtra.obd_speed = snap.speed; wroteOBD = true; }
+          if (snap.rpm != null) { fgExtra.obd_rpm = snap.rpm; wroteOBD = true; }
+          if (snap.fuelLevel != null) { fgExtra.obd_fuel = snap.fuelLevel; wroteOBD = true; }
+          if (wroteOBD) fgExtra.obd_updated_at = new Date().toISOString();
         }
-        await supabase.from('driver_locations').upsert(locUpdate, { onConflict: 'driver_id' });
+        await writeDriverLocation({
+          client: supabase,
+          driverId: session.user.id,
+          latitude,
+          longitude,
+          source: LOCATION_SOURCES.FG_WATCH,
+          fixTimestamp: loc.timestamp || null,
+          appState: AppState.currentState,
+          extra: fgExtra,
+        });
 
         // Accumulate miles
         try {
@@ -1486,12 +1532,15 @@ export default function MyTripsScreen({ session, navigation }) {
       { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 10000, distanceInterval: 0 },
       async (loc) => {
         const { latitude, longitude, speed: rawSpeed } = loc.coords;
-        await supabase.from('driver_locations').upsert({
-          driver_id: session.user.id,
+        await writeDriverLocation({
+          client: supabase,
+          driverId: session.user.id,
           latitude,
           longitude,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'driver_id' });
+          source: LOCATION_SOURCES.FG_WATCH,
+          fixTimestamp: loc.timestamp || null,
+          appState: AppState.currentState,
+        });
 
         try {
           const tripStored = await AsyncStorage.getItem('activeTrip');

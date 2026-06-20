@@ -526,12 +526,20 @@ export default function App() {
             const currentSession = await supabase.auth.getSession();
             const uid = currentSession?.data?.session?.user?.id;
             if (uid) {
-              await supabase.from('driver_locations').upsert({
-                driver_id: uid,
+              // Phase 1 audit instrumentation: route through writeDriverLocation
+              // so silent-push wakes are source-tagged and rejections are
+              // logged (previously a silent failure path).
+              const { writeDriverLocation, LOCATION_SOURCES } = require('./lib/locationWrite');
+              const { AppState } = require('react-native');
+              await writeDriverLocation({
+                client: supabase,
+                driverId: uid,
                 latitude,
                 longitude,
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'driver_id' });
+                source: LOCATION_SOURCES.SILENT_PUSH,
+                fixTimestamp: loc.timestamp || null,
+                appState: AppState.currentState,
+              });
               console.log('[Wake] Location updated via silent push');
             }
           } catch (e) {
