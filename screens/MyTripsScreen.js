@@ -45,10 +45,91 @@ import useResponsive from '../lib/useResponsive';
 import OBDStatusCard from '../components/OBDStatusCard';
 import { obdBLE, obdData, mockOBD } from '../lib/obd2';
 import { writeDriverLocation, logPathFired, LOCATION_SOURCES } from '../lib/locationWrite';
+// Phase 3: iOS 17+ Core Location modern API. Loaded lazily so older
+// runtimes that predate the native rebuild keep working.
+let getModernLocation = null;
+try { getModernLocation = require('../modules/modern-location').getModernLocation; } catch {}
 
 const LOCATION_TASK = 'background-location-task';
 const SIGNIFICANT_CHANGE_TASK = 'significant-location-change-task';
 const TIMEOUT_MS = 8000;
+
+// ── iOS 17+ modern Core Location path (Phase 3) ──────────────────────────────
+// CLLocationUpdate.liveUpdates + CLBackgroundActivitySession. Runs in
+// parallel with the legacy background-location-task so we can A/B them in the
+// Phase 1 dashboards (source: 'bg_task' vs 'modern_bg'). Once the data shows
+// modern_bg is reliably outperforming bg_task on per-driver fire rates we'll
+// retire the legacy path.
+let _modernLocationSub = null;
+
+async function startModernLocationBackground() {
+  if (!getModernLocation) return false;
+  const mod = getModernLocation();
+  if (!mod || !mod.isAvailable?.()) return false;
+
+  // Tear down any leftover subscription so we don't double-write on reopen.
+  if (_modernLocationSub) { try { _modernLocationSub.remove(); } catch {} _modernLocationSub = null; }
+
+  _modernLocationSub = mod.addListener('onLocationUpdate', async (update) => {
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const stored = await AsyncStorage.getItem('activeTrip');
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (parsed.paused || !parsed.userId) return;
+
+      // Read latest OBD snapshot the same way the BG task does so the
+      // dashboard's OBD display stays fresh when modern_bg is the only
+      // path firing.
+      const obdExtra = {};
+      try {
+        const obdRaw = await AsyncStorage.getItem('obdSnapshot');
+        if (obdRaw) {
+          const obd = JSON.parse(obdRaw);
+          if (obd?.timestamp && Date.now() - obd.timestamp < 30000) {
+            let wroteOBD = false;
+            if (obd.speed != null) { obdExtra.obd_speed = obd.speed; wroteOBD = true; }
+            if (obd.rpm != null) { obdExtra.obd_rpm = obd.rpm; wroteOBD = true; }
+            if (obd.fuelLevel != null) { obdExtra.obd_fuel = obd.fuelLevel; wroteOBD = true; }
+            if (wroteOBD) obdExtra.obd_updated_at = new Date().toISOString();
+          }
+        }
+      } catch {}
+
+      await writeDriverLocation({
+        client: supabase,
+        driverId: parsed.userId,
+        latitude: update.latitude,
+        longitude: update.longitude,
+        source: LOCATION_SOURCES.MODERN_BG,
+        fixTimestamp: update.timestamp || null,
+        appState: AppState.currentState,
+        extra: obdExtra,
+      });
+    } catch (e) {
+      console.log('[ModernLocation] handler error:', e?.message);
+    }
+  });
+
+  try {
+    const { started } = await mod.startBackgroundSession();
+    console.log('[ModernLocation] startBackgroundSession:', started);
+    return !!started;
+  } catch (e) {
+    console.log('[ModernLocation] startBackgroundSession failed:', e?.message);
+    return false;
+  }
+}
+
+async function stopModernLocationBackground() {
+  if (_modernLocationSub) { try { _modernLocationSub.remove(); } catch {} _modernLocationSub = null; }
+  if (!getModernLocation) return;
+  const mod = getModernLocation();
+  if (!mod) return;
+  try { await mod.stopBackgroundSession(); } catch (e) {
+    console.log('[ModernLocation] stopBackgroundSession failed:', e?.message);
+  }
+}
 
 // ── Significant Location Change task (safety net) ────────────────────────────
 // iOS fires this even if the app was terminated. When triggered, we check if
@@ -1296,6 +1377,12 @@ export default function MyTripsScreen({ session, navigation }) {
       showsBackgroundLocationIndicator: true,
     });
 
+    // iOS 17+ modern Core Location path. Runs in parallel with the legacy
+    // BG task so we can A/B them via source-tagged writes. Must be started
+    // from foreground; this code path runs only from handleStart which is
+    // always invoked from a user tap.
+    startModernLocationBackground();
+
     // Register significant location change as safety net
     // iOS will wake the app even if terminated when driver moves ~500m
     try {
@@ -1456,7 +1543,8 @@ export default function MyTripsScreen({ session, navigation }) {
   async function handlePause(trip) {
     // Stop foreground watcher
     if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
-    // Stop background task + SLC
+    // Stop background task + SLC + modern Core Location session
+    try { await stopModernLocationBackground(); } catch {}
     try {
       const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
       if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
@@ -1614,6 +1702,10 @@ export default function MyTripsScreen({ session, navigation }) {
       showsBackgroundLocationIndicator: true,
     });
 
+    // Start the iOS 17+ modern Core Location session in parallel (no-op if
+    // unavailable). Resume runs from a user tap → foreground guaranteed.
+    startModernLocationBackground();
+
     // Re-register SLC safety net
     try {
       const isSLC = await Location.hasStartedLocationUpdatesAsync(SIGNIFICANT_CHANGE_TASK);
@@ -1659,6 +1751,7 @@ export default function MyTripsScreen({ session, navigation }) {
             if (currentTrip?.status === 'completed' || currentTrip?.status === 'finalized') {
               // Trip already ended — just clean up local state
               if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
+              try { await stopModernLocationBackground(); } catch {}
               try {
                 const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
                 if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
@@ -1675,8 +1768,9 @@ export default function MyTripsScreen({ session, navigation }) {
               return;
             }
 
-            // Stop foreground watcher, background task, and SLC safety net
+            // Stop foreground watcher, background task, SLC, modern Core Location
             if (locationWatcherRef.current) { locationWatcherRef.current.remove(); locationWatcherRef.current = null; }
+            try { await stopModernLocationBackground(); } catch {}
             const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
             if (isTracking) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
             try {
