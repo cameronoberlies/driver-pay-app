@@ -1,0 +1,8 @@
+{
+  "name": "modern-location",
+  "version": "0.1.0",
+  "description": "iOS 17+ CLLocationUpdate.liveUpdates + CLBackgroundActivitySession wrapper. Replaces expo-location's background task on iOS 17+ so the session auto-resumes when movement returns after a stationary pause — the documented behaviour of the modern Core Location API that the legacy CLLocationManager path used by expo-location does not provide.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true
+}
