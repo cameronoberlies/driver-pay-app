@@ -84,8 +84,7 @@ public class ModernLocationModule: Module {
                     // foreground again" event. We surface it as a state
                     // change so the JS side can log it but do nothing else.
                     self.sendEvent("onStateChange", [
-                        "state": update.isStationary ? "stationary" : "active",
-                        "authorization": String(describing: update.authorizationDenied)
+                        "state": update.isStationary ? "stationary" : "active"
                     ])
 
                     if let location = update.location {
@@ -103,16 +102,15 @@ public class ModernLocationModule: Module {
                         ])
                     }
 
-                    // Surface "authorization denied / restricted" cases as
-                    // explicit errors so JS can stop the session cleanly.
-                    if update.authorizationDenied || update.authorizationDeniedGlobally
-                        || update.authorizationRestricted {
-                        self.sendEvent("onError", [
-                            "code": "authorization_revoked",
-                            "message": "Location authorization is no longer granted"
-                        ])
-                        break
-                    }
+                    // The authorizationDenied / authorizationDeniedGlobally
+                    // / authorizationRestricted properties on LocationUpdate
+                    // were added in iOS 18. We can't read them at iOS 17.
+                    // If authorization is revoked mid-stream the stream just
+                    // stops delivering updates, which is fine — JS observes
+                    // a stale-tracking signal via its existing path-fired
+                    // instrumentation and we don't need to surface it from
+                    // here at iOS 17. Revisit when bumping the deployment
+                    // target.
                 }
             } catch {
                 self.sendEvent("onError", [

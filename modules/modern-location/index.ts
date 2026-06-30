@@ -40,7 +40,6 @@ export type LocationUpdate = {
 
 export type StateChange = {
   state: 'stationary' | 'active';
-  authorization: string;
 };
 
 export type ModernLocationError = {
