@@ -124,12 +124,22 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   // distinguishable from "iOS woke us but the write failed". Use a temp
   // anon-only client so the log doesn't itself require user auth.
   let firedLogClient = null;
+  // Read driver_id from activeTrip first so per-driver fire analysis works.
+  // Phase 2 query gap: rejections carry driver_id but fires didn't, so we
+  // couldn't tell "iOS isn't waking THIS driver" from "we don't know who
+  // any given fire belongs to."
+  let firedDriverId = null;
+  try {
+    const _activeForFire = await AsyncStorage.getItem('activeTrip');
+    if (_activeForFire) firedDriverId = JSON.parse(_activeForFire)?.userId || null;
+  } catch {}
   try {
     firedLogClient = createClient(
       'https://yincjogkjvotupzgetqg.supabase.co',
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbmNqb2dranZvdHVwemdldHFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTc2MTAsImV4cCI6MjA4ODQ5MzYxMH0._gxry5gqeBUFRz8la2IeHW8if1M1IdAHACMKUWy1las'
     );
     await logPathFired(LOCATION_SOURCES.BG_TASK, {
+      driver_id: firedDriverId,
       location_count: locations.length,
       fix_timestamp: locations[locations.length - 1]?.timestamp || null,
     }, firedLogClient);
