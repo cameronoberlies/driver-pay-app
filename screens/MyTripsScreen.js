@@ -61,6 +61,12 @@ const TIMEOUT_MS = 8000;
 // modern_bg is reliably outperforming bg_task on per-driver fire rates we'll
 // retire the legacy path.
 let _modernLocationSub = null;
+// Throttle for modern_bg path_fired events. Modern API can deliver an update
+// every 1-2 seconds; logging every fire would flood system_logs. Once per
+// 60s per running app instance is plenty to answer "is iOS delivering to
+// this driver".
+let _modernLocationLastFireLog = 0;
+const MODERN_FIRE_LOG_INTERVAL_MS = 60000;
 
 async function startModernLocationBackground() {
   if (!getModernLocation) return false;
@@ -77,6 +83,20 @@ async function startModernLocationBackground() {
       if (!stored) return;
       const parsed = JSON.parse(stored);
       if (parsed.paused || !parsed.userId) return;
+
+      // Throttled path_fired event: once per 60s per running instance. Gives
+      // us per-driver "iOS is delivering modern updates" evidence in
+      // system_logs without flooding — the direct comparison to bg_task fire
+      // rate that we can't get from driver_locations (row-per-driver).
+      const _fireNow = Date.now();
+      if (_fireNow - _modernLocationLastFireLog >= MODERN_FIRE_LOG_INTERVAL_MS) {
+        _modernLocationLastFireLog = _fireNow;
+        logPathFired(LOCATION_SOURCES.MODERN_BG, {
+          driver_id: parsed.userId,
+          fix_timestamp: update.timestamp || null,
+          throttle_ms: MODERN_FIRE_LOG_INTERVAL_MS,
+        }).catch(() => {});
+      }
 
       // Read latest OBD snapshot the same way the BG task does so the
       // dashboard's OBD display stays fresh when modern_bg is the only
@@ -123,6 +143,7 @@ async function startModernLocationBackground() {
 
 async function stopModernLocationBackground() {
   if (_modernLocationSub) { try { _modernLocationSub.remove(); } catch {} _modernLocationSub = null; }
+  _modernLocationLastFireLog = 0;
   if (!getModernLocation) return;
   const mod = getModernLocation();
   if (!mod) return;
